@@ -51,7 +51,8 @@ if __name__ == "__main__":
     for epoch in range(epochs):
         running_loss = 0.0
         print("• Beginning epoch", epoch)
-        print("----- Training -----")
+        print("----- Training -----") 
+        model.train()
         for i, (batch_X, batch_gt_y) in enumerate(train_loader, start=0):
             optimizer.zero_grad()
             batch_pred_y = model(batch_X)

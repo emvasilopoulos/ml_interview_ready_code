@@ -12,7 +12,7 @@ logger = logging.getLogger("Images-Dataset-Logger")
 logger.setLevel(logging.WARNING)
 
 
-class ImagesClassificationDataset(Dataset):
+class ImageClassificationDataset(Dataset):
     def __init__(
         self,
         dataset_path: str,
@@ -51,7 +51,7 @@ class ImagesClassificationDataset(Dataset):
     def __len__(self):
         return len(self.images_and_labels)
 
-    def __getitem__(self, index) -> Tuple[np.ndarray, int | str]:
+    def __getitem__(self, index) -> Tuple[np.ndarray, int]:
         img = cv2.imread(self.images_and_labels[index][0])
         label = read_int_label_from_txt(self.images_and_labels[index][1])
         return img, label

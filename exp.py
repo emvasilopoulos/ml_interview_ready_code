@@ -1,31 +1,25 @@
-import pandas as pd
-from sklearn.model_selection import train_test_split
-from src.tabular.dataset import TableDataset
-from torch.utils.data import DataLoader
+import torch
+from src.images.models.example import ExampleNet
+from src.images.preprocess.pil import PILPreprocessor
+import numpy as np
+from PIL import Image
+
+
+def tensor_image_analysis(tensor_image):
+    print(tensor_image.shape)
+    print(torch.min(tensor_image))
+    print(torch.max(tensor_image))
 
 
 if __name__ == "__main__":
-    synthetic_df = pd.read_csv("src/tabular/data/synthetic_table.csv")
-    X = synthetic_df.loc[:, synthetic_df.columns.str.startswith("feature")].values
-    y = synthetic_df.loc[:, "label"].values
-
-    n_samples = X.shape[0]
-    train_x, test_x, train_y, test_y = train_test_split(
-        X, y, test_size=int(n_samples * 0.3)
+    random_image = np.random.randint(
+        low=0, high=256, dtype=np.uint8, size=(400, 400, 3)
     )
-
-    train_dataset = TableDataset(train_x, train_y)
-    test_dataset = TableDataset(test_x, test_y)
-
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=16, shuffle=True)
-
-    print("---------- train")
-    for x, y in train_loader:
-        print(x.shape)
-        print(y.shape)
-
-    print("---------- test")
-    for x, y in test_loader:
-        print(x.shape)
-        print(y.shape)
+    device = torch.device("cpu")
+    tensor_random_image = PILPreprocessor.to_tensor(
+        image=Image.fromarray(random_image), device=device
+    ).unsqueeze(0)
+    model = ExampleNet(*random_image.shape, n_classes=3)
+    model.eval()
+    model.to(device)
+    print(model(tensor_random_image))
