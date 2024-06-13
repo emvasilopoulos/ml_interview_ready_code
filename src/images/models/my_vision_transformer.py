@@ -63,8 +63,34 @@ class CnnConfiguration:
     use_cnn: bool
 
 
+class PatchingLayer(torch.nn.Module):
+    def __init__(
+        self, patch_size: int = 32, image_width: int = 640, image_height: int = 384
+    ):
+        super().__init__()
+        assert image_width % patch_size == 0
+        assert image_height % patch_size == 0
+
+        self.patch_size = patch_size
+        self.unfold = torch.nn.Unfold(kernel_size=patch_size, stride=patch_size)
+
+    def forward(self, images_batch: torch.Tensor):
+
+        batch_size, n_channels, _, _ = images_batch.shape
+
+        images_batch = self.unfold(images_batch)
+
+        # Reshaping into the shape we want
+        a = images_batch.view(
+            batch_size, n_channels, self.patch_size, self.patch_size, -1
+        ).permute(0, 4, 1, 2, 3)
+
+        return a
+
+
 class VisionTransformerEncoder(torch.nn.Module):
     patch_size: int = 32
+    patcher: PatchingLayer
     patch_embedder: PatchEmbedder
     position_embedder: PositionEmbedder
     encoder_layer: torch.nn.TransformerEncoderLayer
@@ -73,6 +99,7 @@ class VisionTransformerEncoder(torch.nn.Module):
     def __init__(self, cnn_config: CnnConfiguration):
         self.cnn_config = cnn_config
 
+        self.patcher = PatchingLayer(patch_size=self.patch_size)
         self.patch_embedder = PatchEmbedder()
         self.encoder_layer = torch.nn.TransformerEncoderLayer()
         self.encoder = torch.nn.TransformerEncoder()
@@ -88,13 +115,13 @@ class VisionTransformerEncoder(torch.nn.Module):
         """
         raise NotImplementedError()
 
-    def forward(self, image: torch.Tensor) -> torch.Tensor:
-        # Step 1 - Split image into fixed-size patches
-        patches = tensor_images_to_patches(image)
+    def forward(self, images_batch: torch.Tensor) -> torch.Tensor:
+        # Step 1 - Split image(s) into fixed-size patches
+        patches_batch = self.patcher(images_batch)
 
         # Step 2 - flatten patches and map each to embeddings of D dimension
         embeddings = self.patch_embedder(
-            patches
+            patches_batch
         )  # Referred as patch embeddings in the paper
         # Prepend a learnable embedding to the patch embeddings
         embeddings = self.prepend_xclass_token(embeddings)
@@ -116,10 +143,17 @@ NOTES
 """
 
 if __name__ == "__main__":
+    import time
+
     image = torch.randn(1, 3, 384, 640)
-
+    patch_layer = Patchify(32)
     # Unfold dim 2 == Height to 32x32 & dim 3 == Width to 32x32
-
-    patches = image.unfold(2, 32, 32).unfold(3, 32, 32)
+    # t0 = time.time()
     # patches = image_to_patches(image)
-    print(patches.shape)
+    # t1 = time.time()
+    # print(f"naive image to patches:", t1 - t0, patches.shape)
+
+    t0 = time.time()
+    patches = patch_layer(image)
+    t1 = time.time()
+    print(f"patch layer:", t1 - t0, patches.shape)
