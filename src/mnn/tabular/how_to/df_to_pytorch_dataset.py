@@ -1,6 +1,6 @@
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from src.tabular.dataset import TableDataset
+from mnn.tabular.dataset import TableDataset
 from torch.utils.data import DataLoader
 
 

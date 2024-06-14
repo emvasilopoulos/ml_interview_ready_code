@@ -1,5 +1,5 @@
 from sklearn.model_selection import train_test_split
-from src.tabular.synthetic_data import create_fake_table_dataframe
+from mnn.tabular.synthetic_data import create_fake_table_dataframe
 
 if __name__ == "__main__":
     synthetic_df = create_fake_table_dataframe(50, 10, 5, 0)

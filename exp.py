@@ -1,8 +1,9 @@
 import torch
-from src.images.models.example import ExampleNet
-from src.images.preprocess.pil import PILPreprocessor
 import numpy as np
 from PIL import Image
+
+from mnn.vision.preprocess.pil import PILPreprocessor
+from mnn.vision.models.example import ExampleNet
 
 
 def tensor_image_analysis(tensor_image):

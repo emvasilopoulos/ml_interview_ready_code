@@ -2,13 +2,12 @@ import pandas as pd
 from sklearn.discriminant_analysis import StandardScaler
 from sklearn.model_selection import train_test_split
 import torch
-from src.tabular.dataset import TableDataset
 from torch.utils.data import DataLoader
 import torch.nn as nn
 import torch.optim as optim
 
-
-from src.tabular.model import SimpleDeepClassifier
+from mnn.tabular.dataset import TableDataset
+from mnn.tabular.model import SimpleDeepClassifier
 
 
 if __name__ == "__main__":
@@ -51,7 +50,7 @@ if __name__ == "__main__":
     for epoch in range(epochs):
         running_loss = 0.0
         print("• Beginning epoch", epoch)
-        print("----- Training -----") 
+        print("----- Training -----")
         model.train()
         for i, (batch_X, batch_gt_y) in enumerate(train_loader, start=0):
             optimizer.zero_grad()

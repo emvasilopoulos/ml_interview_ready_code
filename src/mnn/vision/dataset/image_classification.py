@@ -5,8 +5,8 @@ import numpy as np
 import logging
 from torch.utils.data import Dataset
 
-from src.checkers import is_image_file, is_labels_file
-from src.images.dataset.utilities import read_int_label_from_txt
+from mnn.checkers import is_image_file, is_labels_file
+from mnn.vision.dataset.utilities import read_int_label_from_txt
 
 logger = logging.getLogger("Images-Dataset-Logger")
 logger.setLevel(logging.WARNING)
@@ -32,18 +32,20 @@ class ImageClassificationDataset(Dataset):
         #
         self.images_and_labels = [
             (
-                os.path.join(images_path, image),
-                os.path.join(
-                    labels_path,
-                    image.replace(images_format_suffix, labels_format_suffix),
-                ),
-            )
-            if is_image_file(image)
-            and os.path.exists(
-                image.replace(images_format_suffix, labels_format_suffix)
-            )
-            else logger.warn(
-                f'WARNING\n1) Check if image for sample "{image}" is {images_format_suffix}\n2) Check if label "{image.replace(images_format_suffix, labels_format_suffix)}" exists...'
+                (
+                    os.path.join(images_path, image),
+                    os.path.join(
+                        labels_path,
+                        image.replace(images_format_suffix, labels_format_suffix),
+                    ),
+                )
+                if is_image_file(image)
+                and os.path.exists(
+                    image.replace(images_format_suffix, labels_format_suffix)
+                )
+                else logger.warn(
+                    f'WARNING\n1) Check if image for sample "{image}" is {images_format_suffix}\n2) Check if label "{image.replace(images_format_suffix, labels_format_suffix)}" exists...'
+                )
             )
             for image in os.listdir(images_path)
         ]
