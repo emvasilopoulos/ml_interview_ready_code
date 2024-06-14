@@ -3,7 +3,7 @@ import numpy as np
 from PIL import Image
 
 from mnn.vision.preprocess.pil import PILPreprocessor
-from mnn.vision.models.example import ExampleNet
+from mnn.vision.models.cnn.vanilla import ExampleNet
 
 
 def tensor_image_analysis(tensor_image):
