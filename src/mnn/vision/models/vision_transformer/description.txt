@@ -1,0 +1,5 @@
+the transformer encoder expects an input of shape:
+(batch_size, sequence_length, hidden_dim)
+
+What I need is a layer before the encoder to transform the input into sequence_length or number of patches
+and hidden_dim or embedding size.
