@@ -2,7 +2,7 @@ import torch
 import mnn.vision.models.vision_transformer.encoder.config as mnn_config
 
 
-def initialize_transformer_encoder(
+def get_transformer_encoder_from_config(
     transformer_encoder_config: mnn_config.VisionTransformerEncoderConfiguration,
 ):
     d_model = transformer_encoder_config.d_model

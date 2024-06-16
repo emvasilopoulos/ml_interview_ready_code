@@ -6,10 +6,10 @@ import torch.nn
 from mnn.vision.models.vision_transformer.patcher import (
     PatchingLayer,
 )
+import mnn.vision.models.vision_transformer.embedders.fully_connected as mnn_fc
 import mnn.vision.models.vision_transformer.encoder.config as mnn_config
 import mnn.vision.models.vision_transformer.encoder.utils as mnn_encoder_utils
-import mnn.vision.models.vision_transformer.embedders as mnn_embedders
-import mnn.vision.models.vision_transformer.positional_encoders as mnn_positional_encoders
+import mnn.vision.models.vision_transformer.positional_encoders.sinusoidal as mnn_sinusoidal_positional_encoders
 
 # Vision Transformer Implementation
 # https://arxiv.org/pdf/2010.11929
@@ -30,8 +30,8 @@ def transformer_sequence_length(patch_size: int, image_size: VisionTranformerIma
 class VisionTransformerEncoder(torch.nn.Module):
     patch_size: int = 32
     patcher: PatchingLayer
-    patch_embedder: mnn_embedders.PatchEmbedder
-    position_embedder: mnn_positional_encoders.PositionalEncoding
+    patch_embedder: mnn_fc.FullyConnectedPatchEmbedder
+    position_embedder: mnn_sinusoidal_positional_encoders.PositionalEncoding
     encoder_layer: torch.nn.TransformerEncoderLayer
     encoder: torch.nn.TransformerEncoder
 
@@ -60,7 +60,10 @@ class VisionTransformerEncoder(torch.nn.Module):
                 image_height=self.input_image_size.height,
                 image_width=self.input_image_size.width,
             )
-            self.patch_embedder = PatchEmbedder(self.patch_size)
+            self.patch_embedder = mnn_fc.FullyConnectedPatchEmbedder(
+                full_patch_size=self.patch_size * self.patch_size * 3,
+                transformer_hidden_dimension_size=transformer_encoder_config.hidden_dim,
+            )
 
         hidden_dim = transformer_encoder_config.hidden_dim
         self.class_token = torch.nn.Parameter(torch.zeros(1, 1, hidden_dim))
@@ -69,7 +72,11 @@ class VisionTransformerEncoder(torch.nn.Module):
         )
         self.sequence_length += 1  # Add class token - Don't know why. BERT does it and the paper mentions it
 
-        self.encoder = mnn_encoder_utils.initialize_transformer_encoder(
+        self.positional_encoder = mnn_sinusoidal_positional_encoders.PositionalEncoding(
+            number_of_tokens=self.sequence_length, size_of_token_embedding=hidden_dim
+        )
+
+        self.encoder = mnn_encoder_utils.get_transformer_encoder_from_config(
             transformer_encoder_config
         )
 
@@ -92,15 +99,16 @@ class VisionTransformerEncoder(torch.nn.Module):
     def forward(self, images_batch: torch.Tensor) -> torch.Tensor:
         # Step 1 - Split image(s) into fixed-size patches
         patches_batch = self.patcher(images_batch)
+        patches_batch = patches_batch.flatten(start_dim=2)
         # The self attention layer expects inputs in the format (batch_size, seq_length, embedding_size)
-
         # Step 2 - flatten patches and map each to embeddings of D dimension
         embeddings_batch = self.patch_embedder(
             patches_batch
         )  # Referred as patch embeddings in the paper
-
         # Step 3 - Prepend a learnable embedding to the patch embeddings
-        embeddings_batch = self.prepend_xclass_token(embeddings_batch)
+        embeddings_batch = self.prepend_xclass_token(
+            batch_size=embeddings_batch.shape[0], embeddings=embeddings_batch
+        )
 
         # Step 4 - Add positional embeddings to retain positional information
         # is this step taken care of by the transformer encoder?
@@ -109,20 +117,20 @@ class VisionTransformerEncoder(torch.nn.Module):
         # interpolated_embeddings_batch = self.interpolate_positional_embeddings(
         #     positional_embeddings_batch
         # )
+        positioned_embeddings_batch = self.positional_encoder(embeddings_batch)
         # Step 5 - Pass positional embeddings through the transformer encoder
-        transformer_encodings_batch = self.encoder(embeddings_batch)
-
+        transformer_encodings_batch = self.encoder(positioned_embeddings_batch)
         # investigate the following from source code of torchvision.VisionTransformer
         """
         The authors of the vision transformer paper state:
         "...we prepend a learnable embedding to the sequence of embed- ded patches (z0 = xclass),
         whose state at the output of the Transformer encoder (z0L) serves as the image representation y"
         """
-        y = transformer_encodings_batch[
-            :, 0
-        ]  # so this is the class token after passing through the encoder
+        # y = transformer_encodings_batch[
+        #     :, 0
+        # ]  # so this is the class token after passing through the encoder
 
-        return y
+        return transformer_encodings_batch
 
 
 """
@@ -139,15 +147,29 @@ if __name__ == "__main__":
 
     n = 1
     patch_size = 32
-    hidden_dim = 768
-    image_size = VisionTranformerImageSize(height=384, width=640, channels=3)
+    hidden_dim = 384
+    import cv2
+
+    image = cv2.imread("../../../../../../data/image/alan_resized.jpeg")
+    image_size = VisionTranformerImageSize(
+        height=image.shape[0], width=image.shape[1], channels=image.shape[2]
+    )
+    # image to pytorch tensor
+    image = torch.tensor(image).permute(2, 0, 1).unsqueeze(0).float()
     image = torch.randn(n, image_size.channels, image_size.height, image_size.width)
 
-    encoder_config = VisionTransformerEncoderConfiguration(use_cnn=False, d_model=16)
+    encoder_config = mnn_config.VisionTransformerEncoderConfiguration(
+        use_cnn=False, d_model=hidden_dim, hidden_dim=hidden_dim
+    )
     my_encoder = VisionTransformerEncoder(encoder_config, image_size)
     # print(my_encoder.encoder)
-    output = my_encoder.encoder(torch.zeros(1, 2, 16))
-    print(output[0])
+
+    output = my_encoder(image)
+    # revert to opencv format
+    output = output[0]
+    image_output = cv2.cvtColor(output.detach().numpy(), cv2.COLOR_GRAY2BGR)
+    cv2.imshow("output", image_output)
+    cv2.waitKey(0)
     # patch_layer = PatchingLayer(patch_size)
 
     # cnn_patcher = torch.nn.Conv2d(
