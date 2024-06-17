@@ -2,6 +2,8 @@ import numpy as np
 import torch
 import torch.nn
 
+# https://proceedings.neurips.cc/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf
+
 
 def get_sinusoid_table(num_tokens: int, token_len: int) -> np.ndarray:
     """Make Sinusoid Table
@@ -30,12 +32,12 @@ class PositionalEncoding(torch.nn.Module):
     """
 
     def __init__(self, number_of_tokens: int, size_of_token_embedding: int):
+        super().__init__()
         # The paper suggests using 1D positional embeddings
         # 2D positional embeddings do not have any advantages
         self.layer = torch.FloatTensor(
             get_sinusoid_table(number_of_tokens, size_of_token_embedding)
         ).unsqueeze(0)
-        pass
 
     def forward(self, patches: torch.Tensor) -> torch.Tensor:
         return patches + self.layer
