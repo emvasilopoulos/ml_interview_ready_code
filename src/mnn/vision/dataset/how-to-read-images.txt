@@ -1,0 +1,5 @@
+use opencv and then convert to tensor.
+
+In Mac mini with M2 benchmarks:
+PIL to Tensor: 10.502045333333333 ms
+OpenCV to Tensor: 6.733069933333333 ms
