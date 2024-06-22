@@ -15,9 +15,11 @@ def get_transformer_encoder_from_config(
         activation="gelu",
         batch_first=True,
     )
+
     layer_norm_eps = transformer_encoder_config.eps
     bias = transformer_encoder_config.bias
     encoder_norm = torch.nn.LayerNorm(d_model, eps=layer_norm_eps, bias=bias)
+
     num_layers = transformer_encoder_config.number_of_layers
     return torch.nn.TransformerEncoder(
         encoder_layer=encoder_layer,
