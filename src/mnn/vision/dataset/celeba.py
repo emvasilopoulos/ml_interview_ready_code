@@ -2,10 +2,15 @@ import abc
 import pathlib
 from typing import Any, Dict, List, Tuple
 import cv2
+import numpy as np
 import torch.utils.data
 
 
-def __read_image(path: pathlib.Path) -> torch.Tensor:
+def _normalize_image(image: np.ndarray) -> np.ndarray:
+    return image / 255.0
+
+
+def _read_image(path: pathlib.Path) -> torch.Tensor:
     return cv2.imread(path.as_posix())
 
 
@@ -14,7 +19,10 @@ def _clean_line(line: str) -> str:
 
 
 def _load_image_as_tensor(image_path: pathlib.Path) -> torch.Tensor:
-    return torch.tensor(__read_image(image_path)).permute(2, 0, 1).float()
+    x = _read_image(image_path)
+    x = cv2.cvtColor(x, cv2.COLOR_BGR2RGB)
+    x = _normalize_image(x)
+    return torch.tensor(x).permute(2, 0, 1).float()
 
 
 def _annotation_as_tensor(annotation: List[int]) -> torch.Tensor:
@@ -24,7 +32,7 @@ def _annotation_as_tensor(annotation: List[int]) -> torch.Tensor:
 class BaseCelebaDataset(torch.utils.data.Dataset, metaclass=abc.ABCMeta):
     def __init__(self, dataset_path: pathlib.Path, use_mini: bool = True) -> None:
         """
-        Dataset structur:
+        Dataset structure:
         /path/to/dataset/
             img_align_celeba/
                 000001.jpg
@@ -192,5 +200,6 @@ if __name__ == "__main__":
         pathlib.Path("/Users/emlvasilopoulos/Datasets/CelebA"), use_mini=True
     )
     img_tensor, annotation_tensor = celeba[1]
+    print(img_tensor.shape)
     print(celeba.attributes)
     print(annotation_tensor)
