@@ -25,4 +25,32 @@ def get_transformer_encoder_from_config(
         encoder_layer=encoder_layer,
         num_layers=num_layers,
         norm=encoder_norm,
+        mask_check=transformer_encoder_config.mask_check,
     )
+
+
+if __name__ == "__main__":
+
+    # I can provide any size of image as long as its dimensions are divisible by patch_size
+
+    # image to pytorch tensor
+    batch_size = 1
+    sequence_length = 240
+    feature_vector_size = 768
+    my_input = torch.randn(batch_size, sequence_length, feature_vector_size)
+
+    encoder_config = mnn_config.VisionTransformerEncoderConfiguration(
+        use_cnn=False,
+        d_model=feature_vector_size,
+        n_heads=16,
+        feed_forward_dimensions=512,
+        number_of_layers=1,
+        eps=2e-5,
+    )
+
+    my_encoder = get_transformer_encoder_from_config(encoder_config)
+    my_output = my_encoder(my_input)
+    print("--------- Encoder ---------")
+    print(my_encoder)
+    print("--------- Output ---------")
+    print(my_output.shape)
