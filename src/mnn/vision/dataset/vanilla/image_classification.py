@@ -5,11 +5,15 @@ import numpy as np
 import logging
 from torch.utils.data import Dataset
 
-from mnn.checkers import is_image_file, is_labels_file
-from mnn.vision.dataset.utilities import read_int_label_from_txt
+from mnn.checkers import is_image_file
 
 logger = logging.getLogger("Images-Dataset-Logger")
 logger.setLevel(logging.WARNING)
+
+
+def _read_int_label_from_txt(label_path: str) -> str:
+    with open(label_path, "r") as f:
+        return int(f.readlines()[0].replace("\n", ""))
 
 
 class ImageClassificationDataset(Dataset):
@@ -55,5 +59,5 @@ class ImageClassificationDataset(Dataset):
 
     def __getitem__(self, index) -> Tuple[np.ndarray, int]:
         img = cv2.imread(self.images_and_labels[index][0])
-        label = read_int_label_from_txt(self.images_and_labels[index][1])
+        label = _read_int_label_from_txt(self.images_and_labels[index][1])
         return img, label

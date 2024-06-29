@@ -5,28 +5,15 @@ import cv2
 import numpy as np
 import torch.utils.data
 
-
-def _normalize_image(image: np.ndarray) -> np.ndarray:
-    return image / 255.0
-
-
-def _read_image(path: pathlib.Path) -> torch.Tensor:
-    return cv2.imread(path.as_posix())
-
-
-def _clean_line(line: str) -> str:
-    return [x for x in line.strip().split(" ") if x != ""]
-
-
-def _load_image_as_tensor(image_path: pathlib.Path) -> torch.Tensor:
-    x = _read_image(image_path)
-    x = cv2.cvtColor(x, cv2.COLOR_BGR2RGB)
-    x = _normalize_image(x)
-    return torch.tensor(x).permute(2, 0, 1).float()
+import mnn.vision.dataset.utilities as utilities
 
 
 def _annotation_as_tensor(annotation: List[int]) -> torch.Tensor:
     return torch.tensor(annotation).float()
+
+
+def _clean_line(line: str) -> str:
+    return [x for x in line.strip().split(" ") if x != ""]
 
 
 class BaseCelebaDataset(torch.utils.data.Dataset, metaclass=abc.ABCMeta):
@@ -88,7 +75,7 @@ class BaseCelebaDataset(torch.utils.data.Dataset, metaclass=abc.ABCMeta):
 
     def __getitem__(self, index) -> Tuple[torch.Tensor, torch.Tensor]:
         image_path = self.images_paths[index]
-        image = _load_image_as_tensor(image_path)
+        image = utilities.load_image_as_tensor(image_path)
         annotation = _annotation_as_tensor(self.annotations[image_path.name])
         return image, self._preprocess_annotation(annotation, image)
 
