@@ -1,5 +1,4 @@
-import dataclasses
-from typing import List
+from typing import Iterable, List
 
 import torch
 import torch.nn
@@ -7,9 +6,9 @@ import torch.nn
 from mnn.vision.models.vision_transformer.patchers.unfolder import (
     PatchingLayer,
 )
+import mnn.vision.image_size
 import mnn.vision.models.vision_transformer.embedders.fully_connected as mnn_fc
 import mnn.vision.models.vision_transformer.encoder.config as mnn_config
-import mnn.vision.models.vision_transformer.encoder.utils as mnn_encoder_utils
 import mnn.vision.models.vision_transformer.positional_encoders.sinusoidal as mnn_sinusoidal_positional_encoders
 import mnn.vision.models.vision_transformer.encoder.block as mnn_encoder_block
 
@@ -18,14 +17,9 @@ import mnn.vision.models.vision_transformer.encoder.block as mnn_encoder_block
 # https://arxiv.org/pdf/2106.14881 # improvements with CNNs
 
 
-@dataclasses.dataclass
-class VisionTranformerImageSize:
-    width: int = 640
-    height: int = 384
-    channels: int = 3
-
-
-def transformer_sequence_length(patch_size: int, image_size: VisionTranformerImageSize):
+def transformer_sequence_length(
+    patch_size: int, image_size: mnn.vision.image_size.ImageSize
+):
     return (image_size.width // patch_size) * (image_size.height // patch_size)
 
 
@@ -35,16 +29,28 @@ class VisionTransformerEncoder(torch.nn.Module):
     patch_embedder: mnn_fc.FullyConnectedPatchEmbedder
     position_embedder: mnn_sinusoidal_positional_encoders.PositionalEncoding
     encoder_layer: torch.nn.TransformerEncoderLayer
-    encoder_block: mnn_encoder_block.TransforemerEncoderBlock
+    encoder_block: mnn_encoder_block.TransformerEncoderBlock
 
     def __init__(
         self,
         transformer_encoder_config: List[
             mnn_config.VisionTransformerEncoderConfiguration
         ],
-        input_image_size: VisionTranformerImageSize,
+        input_image_size: mnn.vision.image_size.ImageSize,
     ):
         super().__init__()
+
+        self.EXPECTED_INPUT_TENSOR = (
+            None,  # batch size
+            input_image_size.channels,
+            input_image_size.height,
+            input_image_size.width,
+        )
+        self.EXPECTED_OUTPUT_TENSOR = (
+            None,  # batch size
+            input_image_size.height,
+            input_image_size.width,
+        )
 
         self.input_image_size = input_image_size
         self.transformer_encoder_config = transformer_encoder_config
@@ -86,7 +92,7 @@ class VisionTransformerEncoder(torch.nn.Module):
             number_of_tokens=self.sequence_length, size_of_token_embedding=d_model
         )
 
-        self.encoder_block = mnn_encoder_block.TransforemerEncoderBlock(
+        self.encoder_block = mnn_encoder_block.TransformerEncoderBlock(
             config=transformer_encoder_config
         )
 
@@ -134,6 +140,109 @@ class VisionTransformerEncoder(torch.nn.Module):
         #     :, 0
         # ]  # so this is the class token after passing through the encoder
 
+        return x
+
+
+class RawVisionTransformerEncoder(torch.nn.Module):
+    def __init__(
+        self,
+        transformer_encoder_config: mnn_config.VisionTransformerEncoderConfiguration,
+        input_image_size: mnn.vision.image_size.ImageSize,
+    ) -> None:
+        super().__init__()
+
+        self.EXPECTED_INPUT_TENSOR = (
+            None,  # batch size
+            input_image_size.height,
+            input_image_size.width,
+        )
+        self.EXPECTED_OUTPUT_TENSOR = (
+            None,  # batch size
+            input_image_size.height,
+            input_image_size.width,
+        )
+
+        self.input_image_size = input_image_size
+        self._check_number_of_channels()
+        self.transformer_encoder_config = transformer_encoder_config
+        self._check_matched_config_and_image_size()
+
+        self.sequence_length = (
+            self.input_image_size.height
+        )  # scanning image from top to bottom
+        self.positional_encoder = mnn_sinusoidal_positional_encoders.PositionalEncoding(
+            number_of_tokens=self.sequence_length,
+            size_of_token_embedding=transformer_encoder_config.d_model,
+        )
+        self.encoder_block = mnn_encoder_block.TransformerEncoderBlock(
+            config=[transformer_encoder_config]
+        )
+
+    def _check_number_of_channels(self):
+        if self.input_image_size.channels != 1:
+            error_message = (
+                "The number of channels must be 1, because a Transformer can process"
+                "(SequenceLength x EmbeddingSize)"
+                "or in other words (Height x Width), not (SequenceLength x EmbeddingSize x Channels)"
+            )
+            raise ValueError(error_message)
+
+    def _check_matched_config_and_image_size(self):
+        if self.input_image_size.width != self.transformer_encoder_config.d_model:
+            raise ValueError(
+                "The width of the image must be divisible by the patch size"
+            )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.positional_encoder(x)
+        x = self.encoder_block(x)
+        return x
+
+
+class RawVisionTransformerEncoderRGB(torch.nn.Module):
+
+    def __init__(
+        self,
+        transformer_encoder_config: mnn_config.VisionTransformerEncoderConfiguration,
+        input_image_size: mnn.vision.image_size.ImageSize,
+    ) -> None:
+        super().__init__()
+
+        self.EXPECTED_INPUT_TENSOR = (
+            None,  # batch size
+            3,
+            input_image_size.height,
+            input_image_size.width,
+        )
+        self.EXPECTED_OUTPUT_TENSOR = (
+            None,  # batch size
+            3,
+            input_image_size.height,
+            input_image_size.width,
+        )
+
+        self.input_image_size = input_image_size
+        single_channel_input_image_size = mnn.vision.image_size.ImageSize(
+            height=input_image_size.height,
+            width=input_image_size.width,
+            channels=1,
+        )
+        self.encoder_rgb = torch.nn.ModuleList(
+            [
+                RawVisionTransformerEncoder(
+                    transformer_encoder_config, single_channel_input_image_size
+                )
+                for _ in range(3)
+            ]
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x_list = [
+            encoder(x[:, i]).unsqueeze(1)
+            for encoder, i in zip(self.encoder_rgb, range(x.shape[1]))
+        ]
+        x = torch.cat(x_list, dim=1)
+        # output shape is (batch_size, 3 * sequence_length, embedding_size)
         return x
 
 

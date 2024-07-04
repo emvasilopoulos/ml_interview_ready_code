@@ -1,30 +1,26 @@
 import time
 import cv2
 import torch
-import mnn.vision.models.vision_transformer.encoder.utils as mnn_encoder_utils
 import mnn.vision.models.vision_transformer.encoder.config as mnn_config
+import mnn.vision.image_size
 from mnn.vision.models.vision_transformer.vit_encoder import (
     VisionTransformerEncoder,
-    VisionTranformerImageSize,
+    RawVisionTransformerEncoder,
 )
 
 if __name__ == "__main__":
 
     n = 1
-    patch_size = 32
-    hidden_dim = 384
-
-    image = cv2.imread("../../../../../data/image/alan_resized.jpeg")
-    image = cv2.resize(image, (704, 416))
+    hidden_dim = 640
 
     # I can provide any size of image as long as its dimensions are divisible by patch_size
 
-    image_size = VisionTranformerImageSize(
-        height=image.shape[0], width=image.shape[1], channels=image.shape[2]
-    )
+    image_size = mnn.vision.image_size.ImageSize(height=640, width=720, channels=3)
     # image to pytorch tensor
-    image = torch.tensor(image).permute(2, 0, 1).unsqueeze(0).float()
-    image = torch.randn(n, image_size.channels, image_size.height, image_size.width)
+    sequence_length = image_size.height
+    embedding_size = image_size.width
+    hidden_dim = embedding_size
+    image = torch.randn(n, sequence_length, image_size.width)
 
     encoder_config = [
         mnn_config.VisionTransformerEncoderConfiguration(
@@ -35,7 +31,7 @@ if __name__ == "__main__":
         ),
     ]
 
-    my_encoder = VisionTransformerEncoder(encoder_config, image_size)
+    my_encoder = RawVisionTransformerEncoder(encoder_config[0], image_size)
 
     t0 = time.time()
     output = my_encoder(image)

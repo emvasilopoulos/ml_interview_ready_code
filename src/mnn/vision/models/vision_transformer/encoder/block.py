@@ -16,7 +16,7 @@ def _validate_config(config: List[mnn_config.VisionTransformerEncoderConfigurati
 
 ## Use with a config list of size 1 at first
 ## until you learn how to use an encoder
-class TransforemerEncoderBlock(torch.nn.Module):
+class TransformerEncoderBlock(torch.nn.Module):
     def __init__(self, config: List[mnn_config.VisionTransformerEncoderConfiguration]):
         super().__init__()
         _validate_config(config)
