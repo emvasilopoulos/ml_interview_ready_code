@@ -148,6 +148,7 @@ class RawVisionTransformerEncoder(torch.nn.Module):
         self,
         transformer_encoder_config: mnn_config.VisionTransformerEncoderConfiguration,
         input_image_size: mnn.vision.image_size.ImageSize,
+        is_input_normalized: bool,
     ) -> None:
         super().__init__()
 
@@ -170,9 +171,12 @@ class RawVisionTransformerEncoder(torch.nn.Module):
         self.sequence_length = (
             self.input_image_size.height
         )  # scanning image from top to bottom
-        self.positional_encoder = mnn_sinusoidal_positional_encoders.PositionalEncoding(
-            number_of_tokens=self.sequence_length,
-            size_of_token_embedding=transformer_encoder_config.d_model,
+        self.positional_encoder = (
+            mnn_sinusoidal_positional_encoders.MyVisionPositionalEncoding(
+                number_of_tokens=self.sequence_length,
+                size_of_token_embedding=transformer_encoder_config.d_model,
+                is_input_normalized=is_input_normalized,
+            )
         )
         self.encoder_block = mnn_encoder_block.TransformerEncoderBlock(
             config=[transformer_encoder_config]
@@ -205,6 +209,7 @@ class RawVisionTransformerEncoderRGB(torch.nn.Module):
         self,
         transformer_encoder_config: mnn_config.VisionTransformerEncoderConfiguration,
         input_image_size: mnn.vision.image_size.ImageSize,
+        is_input_normalized: bool,
     ) -> None:
         super().__init__()
 
@@ -230,7 +235,9 @@ class RawVisionTransformerEncoderRGB(torch.nn.Module):
         self.encoder_rgb = torch.nn.ModuleList(
             [
                 RawVisionTransformerEncoder(
-                    transformer_encoder_config, single_channel_input_image_size
+                    transformer_encoder_config,
+                    single_channel_input_image_size,
+                    is_input_normalized,
                 )
                 for _ in range(3)
             ]
