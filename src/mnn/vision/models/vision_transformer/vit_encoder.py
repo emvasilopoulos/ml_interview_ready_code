@@ -214,13 +214,11 @@ class RawVisionTransformerEncoderRGB(torch.nn.Module):
         super().__init__()
 
         self.EXPECTED_INPUT_TENSOR = (
-            None,  # batch size
             3,
             input_image_size.height,
             input_image_size.width,
         )
         self.EXPECTED_OUTPUT_TENSOR = (
-            None,  # batch size
             3,
             input_image_size.height,
             input_image_size.width,
@@ -253,10 +251,51 @@ class RawVisionTransformerEncoderRGB(torch.nn.Module):
         return x
 
 
+class ThreeChannelsCombinator(torch.nn.Module):
+    def __init__(self, previous_encoder_block: RawVisionTransformerEncoderRGB):
+        super().__init__()
+
+        self.weights_r = torch.nn.Parameter(
+            torch.randn(previous_encoder_block.EXPECTED_OUTPUT_TENSOR)
+        )
+        self.weights_g = torch.nn.Parameter(
+            torch.randn(previous_encoder_block.EXPECTED_OUTPUT_TENSOR)
+        )
+        self.weights_b = torch.nn.Parameter(
+            torch.randn(previous_encoder_block.EXPECTED_OUTPUT_TENSOR)
+        )
+
+    def forward(self, previous_encoder_output: torch.Tensor) -> torch.Tensor:
+        output_vec = (
+            previous_encoder_output[:, 0] * self.weights_r
+            + previous_encoder_output[:, 1] * self.weights_g
+            + previous_encoder_output[:, 2] * self.weights_b
+        )
+        return output_vec
+
+
+class ThreeChannelsCombinatorToThreeChannels(torch.nn.Module):
+    # BUGGY
+    # Input should be (batch_size, sequence_length, embedding_size)
+    # Output should be (batch_size, sequence_length, embedding_size)
+    # Instead for (1, sequence_length, embedding_size) it returns (3, sequence_length, embedding_size)
+
+    def __init__(self, previous_encoder_block: RawVisionTransformerEncoderRGB):
+        super().__init__()
+
+        self.to_three_channels = torch.nn.ModuleList(
+            [ThreeChannelsCombinator(previous_encoder_block) for _ in range(3)]
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x_list = [combinator(x).unsqueeze(1) for combinator in self.to_three_channels]
+        x = torch.cat(x_list, dim=1)
+        return x
+
+
 """
 NOTES
 1. It is often beneficial to fine-tune at higher resolution than pre-training
-
 """
 
 """ HELP WITH IMPLEMENTATION """
