@@ -23,6 +23,7 @@ def transformer_sequence_length(
     return (image_size.width // patch_size) * (image_size.height // patch_size)
 
 
+# First edition of the Vision Transformer Encoder copying the architecture of the paper
 class VisionTransformerEncoder(torch.nn.Module):
     patch_size: int = 32
     patcher: PatchingLayer
@@ -143,7 +144,12 @@ class VisionTransformerEncoder(torch.nn.Module):
         return x
 
 
+# Second edition of the Vision Transformer Encoder
 class RawVisionTransformerEncoder(torch.nn.Module):
+    """
+    This layer should process a single channel image.
+    """
+
     def __init__(
         self,
         transformer_encoder_config: mnn_config.VisionTransformerEncoderConfiguration,
@@ -207,6 +213,9 @@ class RawVisionTransformerEncoder(torch.nn.Module):
 
 
 class RawVisionTransformerEncoderRGB(torch.nn.Module):
+    """
+    This layer should process a three channel image.
+    """
 
     def __init__(
         self,
@@ -259,6 +268,14 @@ class RawVisionTransformerEncoderRGB(torch.nn.Module):
 
 
 class ThreeChannelsCombinator(torch.nn.Module):
+    """
+    Combines the three channels into one.
+    The "RGB pixels" are combined into one "pixel".
+
+    Args:
+        torch (_type_): _description_
+    """
+
     def __init__(self, previous_encoder_block: RawVisionTransformerEncoderRGB):
         super().__init__()
         _, previous_block_output_height, previous_block_output_width = (
@@ -284,10 +301,10 @@ class ThreeChannelsCombinator(torch.nn.Module):
 
 
 class ThreeChannelsCombinatorToThreeChannels(torch.nn.Module):
-    # BUGGY
-    # Input should be (batch_size, sequence_length, embedding_size)
-    # Output should be (batch_size, sequence_length, embedding_size)
-    # Instead for (1, sequence_length, embedding_size) it returns (3, sequence_length, embedding_size)
+    """
+    Three parallel ThreeChannelsCombinator layers.
+    This module re-creates three channels to be passed to the next encoder block.
+    """
 
     def __init__(self, previous_encoder_block: RawVisionTransformerEncoderRGB):
         super().__init__()
