@@ -197,6 +197,9 @@ class RawVisionTransformerEncoder(torch.nn.Module):
                 "The width of the image must be divisible by the patch size"
             )
 
+    def set_batch_size(self, batch_size: int):
+        self.positional_encoder.set_batch_size(batch_size)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.positional_encoder(x)
         x = self.encoder_block(x)
@@ -241,6 +244,10 @@ class RawVisionTransformerEncoderRGB(torch.nn.Module):
             ]
         )
 
+    def set_batch_size(self, batch_size: int):
+        for encoder in self.encoder_rgb:
+            encoder.set_batch_size(batch_size)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_list = [
             encoder(x[:, i]).unsqueeze(1)
@@ -254,15 +261,17 @@ class RawVisionTransformerEncoderRGB(torch.nn.Module):
 class ThreeChannelsCombinator(torch.nn.Module):
     def __init__(self, previous_encoder_block: RawVisionTransformerEncoderRGB):
         super().__init__()
-
+        _, previous_block_output_height, previous_block_output_width = (
+            previous_encoder_block.EXPECTED_OUTPUT_TENSOR
+        )
         self.weights_r = torch.nn.Parameter(
-            torch.randn(previous_encoder_block.EXPECTED_OUTPUT_TENSOR)
+            torch.randn((previous_block_output_height, previous_block_output_width))
         )
         self.weights_g = torch.nn.Parameter(
-            torch.randn(previous_encoder_block.EXPECTED_OUTPUT_TENSOR)
+            torch.randn((previous_block_output_height, previous_block_output_width))
         )
         self.weights_b = torch.nn.Parameter(
-            torch.randn(previous_encoder_block.EXPECTED_OUTPUT_TENSOR)
+            torch.randn((previous_block_output_height, previous_block_output_width))
         )
 
     def forward(self, previous_encoder_output: torch.Tensor) -> torch.Tensor:
