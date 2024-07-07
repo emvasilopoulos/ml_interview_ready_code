@@ -1,9 +1,9 @@
 import torch
-import mnn.vision.models.vision_transformer.encoder.config as mnn_config
+import mnn.vision.models.vision_transformer.encoder.config as mnn_encoder_config
 
 
 def get_transformer_encoder_from_config(
-    transformer_encoder_config: mnn_config.VisionTransformerEncoderConfiguration,
+    transformer_encoder_config: mnn_encoder_config.VisionTransformerEncoderConfiguration,
 ):
     d_model = transformer_encoder_config.d_model
     n_head = transformer_encoder_config.n_heads
@@ -39,7 +39,7 @@ if __name__ == "__main__":
     feature_vector_size = 768
     my_input = torch.randn(batch_size, sequence_length, feature_vector_size)
 
-    encoder_config = mnn_config.VisionTransformerEncoderConfiguration(
+    encoder_config = mnn_encoder_config.VisionTransformerEncoderConfiguration(
         use_cnn=False,
         d_model=feature_vector_size,
         n_heads=16,

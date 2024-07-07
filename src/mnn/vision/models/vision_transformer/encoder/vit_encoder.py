@@ -8,7 +8,7 @@ from mnn.vision.models.vision_transformer.patchers.unfolder import (
 )
 import mnn.vision.image_size
 import mnn.vision.models.vision_transformer.embedders.fully_connected as mnn_fc
-import mnn.vision.models.vision_transformer.encoder.config as mnn_config
+import mnn.vision.models.vision_transformer.encoder.config as mnn_encoder_config
 import mnn.vision.models.vision_transformer.positional_encoders.sinusoidal as mnn_sinusoidal_positional_encoders
 import mnn.vision.models.vision_transformer.encoder.block as mnn_encoder_block
 
@@ -35,7 +35,7 @@ class VisionTransformerEncoder(torch.nn.Module):
     def __init__(
         self,
         transformer_encoder_config: List[
-            mnn_config.VisionTransformerEncoderConfiguration
+            mnn_encoder_config.VisionTransformerEncoderConfiguration
         ],
         input_image_size: mnn.vision.image_size.ImageSize,
     ):
@@ -55,6 +55,7 @@ class VisionTransformerEncoder(torch.nn.Module):
 
         self.input_image_size = input_image_size
         self.transformer_encoder_config = transformer_encoder_config
+        self._check_matched_config_and_image_size()
 
         if transformer_encoder_config[0].use_cnn:
             # Simple CNN to extract patches
@@ -143,6 +144,12 @@ class VisionTransformerEncoder(torch.nn.Module):
 
         return x
 
+    def _check_matched_config_and_image_size(self):
+        if self.input_image_size.width != self.transformer_encoder_config.d_model:
+            raise ValueError(
+                "The width of the image must be divisible by the patch size"
+            )
+
 
 # Second edition of the Vision Transformer Encoder
 class RawVisionTransformerEncoder(torch.nn.Module):
@@ -152,7 +159,7 @@ class RawVisionTransformerEncoder(torch.nn.Module):
 
     def __init__(
         self,
-        transformer_encoder_config: mnn_config.VisionTransformerEncoderConfiguration,
+        transformer_encoder_config: mnn_encoder_config.VisionTransformerEncoderConfiguration,
         input_image_size: mnn.vision.image_size.ImageSize,
     ) -> None:
         super().__init__()
@@ -171,7 +178,6 @@ class RawVisionTransformerEncoder(torch.nn.Module):
         self.input_image_size = input_image_size
         self._check_number_of_channels()
         self.transformer_encoder_config = transformer_encoder_config
-        self._check_matched_config_and_image_size()
 
         self.sequence_length = (
             self.input_image_size.height
@@ -190,12 +196,6 @@ class RawVisionTransformerEncoder(torch.nn.Module):
             )
             raise ValueError(error_message)
 
-    def _check_matched_config_and_image_size(self):
-        if self.input_image_size.width != self.transformer_encoder_config.d_model:
-            raise ValueError(
-                "The width of the image must be divisible by the patch size"
-            )
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.encoder_block(x)
 
@@ -207,7 +207,7 @@ class RawVisionTransformerEncoderRGB(torch.nn.Module):
 
     def __init__(
         self,
-        transformer_encoder_config: mnn_config.VisionTransformerEncoderConfiguration,
+        transformer_encoder_config: mnn_encoder_config.VisionTransformerEncoderConfiguration,
         input_image_size: mnn.vision.image_size.ImageSize,
     ) -> None:
         super().__init__()

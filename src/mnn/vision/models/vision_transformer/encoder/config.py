@@ -39,7 +39,7 @@ class VisionTransformerEncoderConfiguration:
             model_configuration["d_model"],
             model_configuration["n_heads"],
             model_configuration["feed_forward_dimensions"],
-            model_configuration["eps"],
+            float(model_configuration["eps"]),
             model_configuration["bias"],
             model_configuration["mask_check"],
         )
@@ -47,4 +47,16 @@ class VisionTransformerEncoderConfiguration:
 
 @dataclasses.dataclass
 class MyVisionTransformerConfiguration:
+    n_high_level_layers: int
     encoder_config: VisionTransformerEncoderConfiguration
+
+    @staticmethod
+    def from_dict(
+        model_configuration: Dict[str, Any]
+    ) -> "MyVisionTransformerConfiguration":
+        return MyVisionTransformerConfiguration(
+            model_configuration["n_high_level_layers"],
+            VisionTransformerEncoderConfiguration.from_dict(
+                model_configuration["VisionTransformerEncoderConfiguration"]
+            ),
+        )

@@ -1,7 +1,7 @@
 import torch
 import torch.nn
 
-import mnn.vision.models.vision_transformer.encoder.config as mnn_config
+import mnn.vision.models.vision_transformer.encoder.config as mnn_encoder_config
 import mnn.vision.image_size
 from mnn.vision.models.vision_transformer.encoder.vit_encoder import (
     RawVisionTransformerEncoderRGB,
@@ -25,7 +25,7 @@ class EncoderCombinator(torch.nn.Module):
 class MyVisionTransformer(torch.nn.Module):
     def __init__(
         self,
-        encoder_config: mnn_config.VisionTransformerEncoderConfiguration,
+        encoder_config: mnn_encoder_config.VisionTransformerEncoderConfiguration,
         image_size: mnn.vision.image_size.ImageSize,
         n_high_level_layers: int,
         is_input_normalized: bool,
