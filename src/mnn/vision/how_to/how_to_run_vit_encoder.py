@@ -3,8 +3,7 @@ import cv2
 import torch
 import mnn.vision.models.vision_transformer.encoder.config as mnn_config
 import mnn.vision.image_size
-from mnn.vision.models.vision_transformer.vit_encoder import (
-    VisionTransformerEncoder,
+from mnn.vision.models.vision_transformer.encoder.vit_encoder import (
     RawVisionTransformerEncoder,
 )
 

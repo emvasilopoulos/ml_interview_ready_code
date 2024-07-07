@@ -4,7 +4,7 @@ VisionTransformerEncoderConfiguration:
   number_of_layers: 1
   d_model: 640
   n_heads: 8
-  feed_forward_dimensions: 2048
+  feed_forward_dimensions: 1024
   eps: 1e-05
   bias: true
   mask_check: false

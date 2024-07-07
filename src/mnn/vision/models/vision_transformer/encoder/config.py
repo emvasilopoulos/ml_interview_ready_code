@@ -1,4 +1,5 @@
 import dataclasses
+from typing import Any, Dict
 
 
 @dataclasses.dataclass
@@ -26,3 +27,24 @@ class VisionTransformerEncoderConfiguration:
     eps: int = 1e-5  # the eps value in final LayerNorm
     bias: bool = True  # whether to use bias in layernorm components
     mask_check: bool = False  # whether to check for mask in forward pass
+
+    @staticmethod
+    def from_dict(
+        model_configuration: Dict[str, Any]
+    ) -> "VisionTransformerEncoderConfiguration":
+        return VisionTransformerEncoderConfiguration(
+            model_configuration["use_cnn"],
+            model_configuration["patch_size"],
+            model_configuration["number_of_layers"],
+            model_configuration["d_model"],
+            model_configuration["n_heads"],
+            model_configuration["feed_forward_dimensions"],
+            model_configuration["eps"],
+            model_configuration["bias"],
+            model_configuration["mask_check"],
+        )
+
+
+@dataclasses.dataclass
+class MyVisionTransformerConfiguration:
+    encoder_config: VisionTransformerEncoderConfiguration
