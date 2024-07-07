@@ -122,13 +122,25 @@ class MyVisionPositionalEncoding(torch.nn.Module):
             scaler = 1
         else:
             scaler = 255
+        self.scaler = scaler
+        self.number_of_tokens = number_of_tokens
+        self.size_of_token_embedding = size_of_token_embedding
 
-        self.pe = self.__transform_positional_encoding_tensor(
-            get_positional_encoding_tensor(number_of_tokens, size_of_token_embedding),
-            scaler,
-        ).unsqueeze(0)
+        self.pe = self.__initialize_positional_encoding()
 
         self.__is_input_normalized = is_input_normalized
+
+    def __initialize_positional_encoding(self):
+        return self.__transform_positional_encoding_tensor(
+            get_positional_encoding_tensor(
+                self.number_of_tokens, self.size_of_token_embedding
+            ),
+            self.scaler,
+        ).unsqueeze(0)
+
+    def set_batch_size(self, batch_size: int):
+        self.pe = self.__initialize_positional_encoding()
+        self.pe = self.pe.repeat(batch_size, 1, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
