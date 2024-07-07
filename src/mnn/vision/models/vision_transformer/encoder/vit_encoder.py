@@ -154,7 +154,6 @@ class RawVisionTransformerEncoder(torch.nn.Module):
         self,
         transformer_encoder_config: mnn_config.VisionTransformerEncoderConfiguration,
         input_image_size: mnn.vision.image_size.ImageSize,
-        is_input_normalized: bool,
     ) -> None:
         super().__init__()
 
@@ -177,13 +176,7 @@ class RawVisionTransformerEncoder(torch.nn.Module):
         self.sequence_length = (
             self.input_image_size.height
         )  # scanning image from top to bottom
-        self.positional_encoder = (
-            mnn_sinusoidal_positional_encoders.MyVisionPositionalEncoding(
-                number_of_tokens=self.sequence_length,
-                size_of_token_embedding=transformer_encoder_config.d_model,
-                is_input_normalized=is_input_normalized,
-            )
-        )
+
         self.encoder_block = mnn_encoder_block.TransformerEncoderBlock(
             config=[transformer_encoder_config]
         )
@@ -203,13 +196,8 @@ class RawVisionTransformerEncoder(torch.nn.Module):
                 "The width of the image must be divisible by the patch size"
             )
 
-    def set_batch_size(self, batch_size: int):
-        self.positional_encoder.set_batch_size(batch_size)
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.positional_encoder(x)
-        x = self.encoder_block(x)
-        return x
+        return self.encoder_block(x)
 
 
 class RawVisionTransformerEncoderRGB(torch.nn.Module):
@@ -221,7 +209,6 @@ class RawVisionTransformerEncoderRGB(torch.nn.Module):
         self,
         transformer_encoder_config: mnn_config.VisionTransformerEncoderConfiguration,
         input_image_size: mnn.vision.image_size.ImageSize,
-        is_input_normalized: bool,
     ) -> None:
         super().__init__()
 
@@ -247,15 +234,10 @@ class RawVisionTransformerEncoderRGB(torch.nn.Module):
                 RawVisionTransformerEncoder(
                     transformer_encoder_config,
                     single_channel_input_image_size,
-                    is_input_normalized,
                 )
                 for _ in range(3)
             ]
         )
-
-    def set_batch_size(self, batch_size: int):
-        for encoder in self.encoder_rgb:
-            encoder.set_batch_size(batch_size)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_list = [
@@ -263,7 +245,6 @@ class RawVisionTransformerEncoderRGB(torch.nn.Module):
             for encoder, i in zip(self.encoder_rgb, range(x.shape[1]))
         ]
         x = torch.cat(x_list, dim=1)
-        # output shape is (batch_size, 3 * sequence_length, embedding_size)
         return x
 
 

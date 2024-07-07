@@ -1,11 +1,13 @@
 import torch
 import torch.nn
+
 import mnn.vision.models.vision_transformer.encoder.config as mnn_config
 import mnn.vision.image_size
 from mnn.vision.models.vision_transformer.encoder.vit_encoder import (
     RawVisionTransformerEncoderRGB,
     ThreeChannelsCombinatorToThreeChannels,
 )
+import mnn.vision.models.vision_transformer.positional_encoders.sinusoidal as mnn_sinusoidal_positional_encoders
 
 
 class EncoderCombinator(torch.nn.Module):
@@ -30,13 +32,19 @@ class MyVisionTransformer(torch.nn.Module):
     ):
         super().__init__()
 
+        self.positional_encoder = (
+            mnn_sinusoidal_positional_encoders.MyVisionPositionalEncoding(
+                number_of_tokens=image_size.height,
+                size_of_token_embedding=encoder_config.d_model,
+                is_input_normalized=is_input_normalized,
+            )
+        )
         self.encoder_combinator_list = torch.nn.Sequential(
             *(
                 EncoderCombinator(
                     RawVisionTransformerEncoderRGB(
                         encoder_config,
                         image_size,
-                        is_input_normalized=is_input_normalized,
                     )
                 )
                 for _ in range(n_high_level_layers)
@@ -45,11 +53,10 @@ class MyVisionTransformer(torch.nn.Module):
         self.sigmoid = torch.nn.Sigmoid()
 
     def set_batch_size(self, batch_size):
-        for encoder_combinator in self.encoder_combinator_list:
-            encoder_combinator.encoder.set_batch_size(batch_size)
+        self.positional_encoder.set_batch_size(batch_size)
 
     def forward(self, x):
-
+        x = self.positional_encoder(x)
         for encoder_combinator in self.encoder_combinator_list:
             x = encoder_combinator(x)
             x = self.sigmoid(x)
