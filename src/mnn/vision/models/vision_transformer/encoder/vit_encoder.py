@@ -10,7 +10,7 @@ import mnn.vision.image_size
 import mnn.vision.models.vision_transformer.embedders.fully_connected as mnn_fc
 import mnn.vision.models.vision_transformer.encoder.config as mnn_encoder_config
 import mnn.vision.models.vision_transformer.positional_encoders.sinusoidal as mnn_sinusoidal_positional_encoders
-import mnn.vision.models.vision_transformer.encoder.block as mnn_encoder_block
+import mnn.vision.models.vision_transformer.encoder.utils as mnn_encoder_utils
 
 # Vision Transformer Implementation
 # https://arxiv.org/pdf/2010.11929
@@ -30,7 +30,6 @@ class VisionTransformerEncoder(torch.nn.Module):
     patch_embedder: mnn_fc.FullyConnectedPatchEmbedder
     position_embedder: mnn_sinusoidal_positional_encoders.PositionalEncoding
     encoder_layer: torch.nn.TransformerEncoderLayer
-    encoder_block: mnn_encoder_block.TransformerEncoderBlock
 
     def __init__(
         self,
@@ -94,8 +93,8 @@ class VisionTransformerEncoder(torch.nn.Module):
             number_of_tokens=self.sequence_length, size_of_token_embedding=d_model
         )
 
-        self.encoder_block = mnn_encoder_block.TransformerEncoderBlock(
-            config=transformer_encoder_config
+        self.encoder_block = mnn_encoder_utils.get_transformer_encoder_from_config(
+            transformer_encoder_config
         )
 
     def prepend_xclass_token(
@@ -183,8 +182,8 @@ class RawVisionTransformerEncoder(torch.nn.Module):
             self.input_image_size.height
         )  # scanning image from top to bottom
 
-        self.encoder_block = mnn_encoder_block.TransformerEncoderBlock(
-            config=[transformer_encoder_config]
+        self.encoder_block = mnn_encoder_utils.get_transformer_encoder_from_config(
+            transformer_encoder_config
         )
 
     def _check_number_of_channels(self):
@@ -200,7 +199,7 @@ class RawVisionTransformerEncoder(torch.nn.Module):
         return self.encoder_block(x)
 
 
-class RawVisionTransformerEncoderRGB(torch.nn.Module):
+class RawVisionTransformerMultiChannelEncoder(torch.nn.Module):
     """
     This layer should process a three channel image.
     """
@@ -209,16 +208,23 @@ class RawVisionTransformerEncoderRGB(torch.nn.Module):
         self,
         transformer_encoder_config: mnn_encoder_config.VisionTransformerEncoderConfiguration,
         input_image_size: mnn.vision.image_size.ImageSize,
+        in_channels: int,
+        out_channels: int,
     ) -> None:
         super().__init__()
 
+        if in_channels != out_channels:
+            raise ValueError(
+                "The number of input channels must match the number of output channels"
+            )
+
         self.EXPECTED_INPUT_TENSOR = (
-            3,
+            in_channels,
             input_image_size.height,
             input_image_size.width,
         )
         self.EXPECTED_OUTPUT_TENSOR = (
-            3,
+            out_channels,
             input_image_size.height,
             input_image_size.width,
         )
@@ -229,75 +235,37 @@ class RawVisionTransformerEncoderRGB(torch.nn.Module):
             width=input_image_size.width,
             channels=1,
         )
-        self.encoder_rgb = torch.nn.ModuleList(
+        self.multi_channels_encoder = torch.nn.ModuleList(
             [
                 RawVisionTransformerEncoder(
                     transformer_encoder_config,
                     single_channel_input_image_size,
                 )
-                for _ in range(3)
+                for _ in range(out_channels)
             ]
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_list = [
             encoder(x[:, i]).unsqueeze(1)
-            for encoder, i in zip(self.encoder_rgb, range(x.shape[1]))
+            for encoder, i in zip(
+                self.multi_channels_encoder, range(x.shape[1]), strict=True
+            )
         ]
         x = torch.cat(x_list, dim=1)
         return x
 
 
-class ThreeChannelsCombinator(torch.nn.Module):
-    """
-    Combines the three channels into one.
-    The "RGB pixels" are combined into one "pixel".
+class RawVisionTransformerRGBEncoder(RawVisionTransformerMultiChannelEncoder):
 
-    Args:
-        torch (_type_): _description_
-    """
-
-    def __init__(self, previous_encoder_block: RawVisionTransformerEncoderRGB):
-        super().__init__()
-        _, previous_block_output_height, previous_block_output_width = (
-            previous_encoder_block.EXPECTED_OUTPUT_TENSOR
+    def __init__(
+        self,
+        transformer_encoder_config: mnn_encoder_config.VisionTransformerEncoderConfiguration,
+        input_image_size: mnn.vision.image_size.ImageSize,
+    ) -> None:
+        super().__init__(
+            transformer_encoder_config, input_image_size, in_channels=3, out_channels=3
         )
-        self.weights_r = torch.nn.Parameter(
-            torch.randn((previous_block_output_height, previous_block_output_width))
-        )
-        self.weights_g = torch.nn.Parameter(
-            torch.randn((previous_block_output_height, previous_block_output_width))
-        )
-        self.weights_b = torch.nn.Parameter(
-            torch.randn((previous_block_output_height, previous_block_output_width))
-        )
-
-    def forward(self, previous_encoder_output: torch.Tensor) -> torch.Tensor:
-        output_vec = (
-            previous_encoder_output[:, 0] * self.weights_r
-            + previous_encoder_output[:, 1] * self.weights_g
-            + previous_encoder_output[:, 2] * self.weights_b
-        )
-        return output_vec
-
-
-class ThreeChannelsCombinatorToThreeChannels(torch.nn.Module):
-    """
-    Three parallel ThreeChannelsCombinator layers.
-    This module re-creates three channels to be passed to the next encoder block.
-    """
-
-    def __init__(self, previous_encoder_block: RawVisionTransformerEncoderRGB):
-        super().__init__()
-
-        self.to_three_channels = torch.nn.ModuleList(
-            [ThreeChannelsCombinator(previous_encoder_block) for _ in range(3)]
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_list = [combinator(x).unsqueeze(1) for combinator in self.to_three_channels]
-        x = torch.cat(x_list, dim=1)
-        return x
 
 
 """
@@ -307,3 +275,24 @@ NOTES
 
 """ HELP WITH IMPLEMENTATION """
 # https://github.com/pytorch/vision/blob/main/torchvision/models/vision_transformer.py
+
+if __name__ == "__main__":
+    transformer_encoder_config = (
+        mnn_encoder_config.VisionTransformerEncoderConfiguration(
+            use_cnn=False,
+            d_model=224,
+        )
+    )
+
+    input_image_size = mnn.vision.image_size.ImageSize(
+        height=224, width=224, channels=4
+    )
+    test_tensor = torch.randn((1, 4, 224, 224))
+    encoder = RawVisionTransformerMultiChannelEncoder(
+        transformer_encoder_config=transformer_encoder_config,
+        input_image_size=input_image_size,
+        in_channels=4,
+        out_channels=4,
+    )
+    output = encoder(test_tensor)
+    print(output.shape)

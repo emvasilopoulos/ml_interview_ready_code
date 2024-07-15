@@ -21,7 +21,7 @@ class VisionTransformerEncoderConfiguration:
     from different representation subspaces at different positions.
     """
     n_heads: int = 16  # the number of heads in the multiheadattention models
-
+    activation: str = "gelu"
     # Alterantive name --> hidden_dim
     feed_forward_dimensions: int = 512  # the dimension of the feedforward network model
     eps: int = 1e-5  # the eps value in final LayerNorm
@@ -38,6 +38,7 @@ class VisionTransformerEncoderConfiguration:
             model_configuration["number_of_layers"],
             model_configuration["d_model"],
             model_configuration["n_heads"],
+            model_configuration["activation"],
             model_configuration["feed_forward_dimensions"],
             float(model_configuration["eps"]),
             model_configuration["bias"],

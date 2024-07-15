@@ -28,16 +28,15 @@ def get_sinusoid_table(num_tokens: int, token_len: int) -> np.ndarray:
     return sinusoid_table
 
 
-def get_positional_encoding_tensor(number_of_tokens: int, size_of_token_embedding: int):
+def get_positional_encoding_tensor(number_of_tokens: int, size_of_token_embedding: int, dtype: torch.dtype = torch.float32) -> torch.Tensor:
     positions_table = torch.tensor(
         [
             _get_position_angle_vec(i, size_of_token_embedding)
             for i in range(number_of_tokens)
-        ],
-        dtype=torch.float,
+        ]
     )
 
-    pe = torch.zeros(number_of_tokens, size_of_token_embedding)
+    pe = torch.zeros(number_of_tokens, size_of_token_embedding, dtype=dtype)
     pe[:, 0::2] = torch.sin(positions_table[:, 0::2])
     pe[:, 1::2] = torch.cos(positions_table[:, 1::2])
 
@@ -110,6 +109,7 @@ class MyVisionPositionalEncoding(torch.nn.Module):
         number_of_tokens: int,
         size_of_token_embedding: int,
         is_input_normalized: bool,
+        dtype: torch.dtype
     ):
         """
         Args:
@@ -125,15 +125,32 @@ class MyVisionPositionalEncoding(torch.nn.Module):
         self.scaler = scaler
         self.number_of_tokens = number_of_tokens
         self.size_of_token_embedding = size_of_token_embedding
+        self.dtype = dtype
 
         self.pe = self.__initialize_positional_encoding()
+        self.register_buffer('pe_buffer', self.pe)  # Register positional encoding as buffer
 
-        self.__is_input_normalized = is_input_normalized
+        if is_input_normalized:
+            """
+            if input is normalized, i.e. in the range [0, 1]
+            and custom positional encoding is in the range [0, 1],
+            since we add both, the output will be in the range [0, 2].
+            Thus we scale the output by 2 to keep it in the range [0, 1]   
+            """
+            self.scaling_factor = 2
+        else:
+            """
+            if input is NOT normalized, i.e. in the range [0, 255]
+            and custom positional encoding is in the range [0, 255],
+            since we add both, the output will be in the range [0, 2 * 255] or [0, 510].
+            Thus we scale the output by 2 * 255 to keep it in the range [0, 1]   
+            """
+            self.scaling_factor = 255 * 2
 
-    def __initialize_positional_encoding(self):
+    def __initialize_positional_encoding(self) -> torch.Tensor:
         return self.__transform_positional_encoding_tensor(
             get_positional_encoding_tensor(
-                self.number_of_tokens, self.size_of_token_embedding
+                self.number_of_tokens, self.size_of_token_embedding, self.dtype
             ),
             self.scaler,
         ).unsqueeze(0)
@@ -151,10 +168,7 @@ class MyVisionPositionalEncoding(torch.nn.Module):
             x: The input tensor plus the positional encodings (same shape as input) normalized to [0, 1]
         """
         # Add positional encodings to the input tensor
-        if self.__is_input_normalized:
-            return (x + self.pe) / 2
-        else:
-            return (x + self.pe) / (255 * 2)
+        return (x + self.pe) / self.scaling_factor
 
 
 def positional_encoding_tensor_to_opencv_image(tensor: torch.Tensor) -> np.ndarray:

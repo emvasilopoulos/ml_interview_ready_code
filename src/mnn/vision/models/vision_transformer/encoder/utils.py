@@ -1,6 +1,12 @@
 import torch
 import mnn.vision.models.vision_transformer.encoder.config as mnn_encoder_config
 
+activation_functions = {
+    "sigmoid": torch.nn.Sigmoid(),
+    "relu": torch.nn.ReLU(),
+    "gelu": torch.nn.GELU(),
+}
+
 
 def get_transformer_encoder_from_config(
     transformer_encoder_config: mnn_encoder_config.VisionTransformerEncoderConfiguration,
@@ -8,11 +14,14 @@ def get_transformer_encoder_from_config(
     d_model = transformer_encoder_config.d_model
     n_head = transformer_encoder_config.n_heads
     ff_dim = transformer_encoder_config.feed_forward_dimensions
+    activation_name = transformer_encoder_config.activation
+    activation = activation_functions[activation_name]
+
     encoder_layer = torch.nn.TransformerEncoderLayer(
         d_model=d_model,
         nhead=n_head,
         dim_feedforward=ff_dim,
-        activation="gelu",
+        activation=activation,
         batch_first=True,
     )
 

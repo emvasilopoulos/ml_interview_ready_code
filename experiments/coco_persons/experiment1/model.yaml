@@ -1,5 +1,5 @@
 MyVisionTransformerConfiguration:
-  n_high_level_layers: 2
+  n_high_level_layers: 2 # TODO - rename to n_hidden_layers
   VisionTransformerEncoderConfiguration:
     use_cnn: false
     patch_size: 16
@@ -7,6 +7,18 @@ MyVisionTransformerConfiguration:
     d_model: 1024 # Same as width of image
     n_heads: 8
     feed_forward_dimensions: 1024
+    activation: gelu
+    eps: 1e-05
+    bias: true
+    mask_check: false
+  VisionTransformerHeadConfiguration:
+    use_cnn: false
+    patch_size: 16
+    number_of_layers: 1
+    d_model: 1024 # Same as width of image
+    n_heads: 8
+    feed_forward_dimensions: 1024
+    activation: sigmoid
     eps: 1e-05
     bias: true
     mask_check: false

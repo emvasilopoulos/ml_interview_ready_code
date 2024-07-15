@@ -3,6 +3,9 @@ import dataclasses
 
 import torch
 import mnn.vision.dataset.word_detection.bounding_client_rect as bounding_client_rect
+from mnn.vision.models.vision_transformer.encoder.vit_encoder import (
+    RawVisionTransformerMultiChannelEncoder,
+)
 
 
 @dataclasses.dataclass
@@ -13,10 +16,19 @@ class TopLeftWidthHeightRectangle:
     height: int
 
 
-class ObjectDetectionOrdinalTrainingHead:
+class VisionTransformerHead(torch.nn.Module):
+
+    def __init__(self, previous_encoder: RawVisionTransformerMultiChannelEncoder):
+
+        pass
+
+
+class ObjectDetectionOrdinalTransformation:
     """
     A class transforming the ground truth data into the training format
     for the object detection head.
+    It should be used in combination with binary-cross-entropy loss.
+    It's worth trying focal loss as well.
     """
 
     INNER_EXPANSION = 10  # in pixels
@@ -32,7 +44,7 @@ class ObjectDetectionOrdinalTrainingHead:
         """
         Same as 'encode_rectangle' but faster by exploiting PyTorch operations
         """
-        expansion_size = ObjectDetectionOrdinalTrainingHead.OUTTER_EXPANSION
+        expansion_size = ObjectDetectionOrdinalTransformation.OUTTER_EXPANSION
         for i in range(0, expansion_size):
             probability = expansion_size - i / expansion_size
             if y - i >= 0:
@@ -122,7 +134,7 @@ class ObjectDetectionOrdinalTrainingHead:
         """
         Encode the rectangle into the mask.
         """
-        inner_expansion = ObjectDetectionOrdinalTrainingHead.INNER_EXPANSION
+        inner_expansion = ObjectDetectionOrdinalTransformation.INNER_EXPANSION
         for i in range(1, inner_expansion):
             probability = inner_expansion - i / inner_expansion
             if x + i < mask.shape[1]:
@@ -152,10 +164,10 @@ class ObjectDetectionOrdinalTrainingHead:
 
     @staticmethod
     def encode_rectangle(mask, y: int, x: int, height: int, width: int):
-        ObjectDetectionOrdinalTrainingHead.expand_rectangle_inwards(
+        ObjectDetectionOrdinalTransformation.expand_rectangle_inwards(
             mask, y, x, height, width
         )
-        ObjectDetectionOrdinalTrainingHead.expand_rectangle_outwards(
+        ObjectDetectionOrdinalTransformation.expand_rectangle_outwards(
             mask, y, x, height, width
         )
 
@@ -178,7 +190,7 @@ class ObjectDetectionOrdinalTrainingHead:
             mask_height = int(height_normalized * mask_shape[0])
             mask_width = int(width_normalized * mask_shape[1])
 
-            ObjectDetectionOrdinalTrainingHead.encode_rectangle(
+            ObjectDetectionOrdinalTransformation.encode_rectangle(
                 mask, mask_y, mask_x, mask_height, mask_width
             )
         return mask
@@ -239,7 +251,7 @@ if __name__ == "__main__":
         TopLeftWidthHeightRectangle(900, 0, 100, 100),
         TopLeftWidthHeightRectangle(900, 900, 100, 100),
     ]
-    mask = ObjectDetectionOrdinalTrainingHead.transform_ground_truth(
+    mask = ObjectDetectionOrdinalTransformation.transform_ground_truth(
         mask_shape, original_image_shape, rectangles
     )
     mask_as_numpy = mask.numpy()
