@@ -3,6 +3,6 @@ input_image_size:
   width: 1024
   channels: 3
 batch_size: 16
-epochs: 2 # 2 epochs for testing
+epochs: 5 # 5 epochs for testing
 optimizer: adam
 learning_rate: 0.001

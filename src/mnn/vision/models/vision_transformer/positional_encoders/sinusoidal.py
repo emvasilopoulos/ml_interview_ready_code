@@ -28,7 +28,7 @@ def get_sinusoid_table(num_tokens: int, token_len: int) -> np.ndarray:
     return sinusoid_table
 
 
-def get_positional_encoding_tensor(number_of_tokens: int, size_of_token_embedding: int, dtype: torch.dtype = torch.float32) -> torch.Tensor:
+def get_positional_encoding_tensor(number_of_tokens: int, size_of_token_embedding: int) -> torch.Tensor:
     positions_table = torch.tensor(
         [
             _get_position_angle_vec(i, size_of_token_embedding)
@@ -36,7 +36,7 @@ def get_positional_encoding_tensor(number_of_tokens: int, size_of_token_embeddin
         ]
     )
 
-    pe = torch.zeros(number_of_tokens, size_of_token_embedding, dtype=dtype)
+    pe = torch.zeros(number_of_tokens, size_of_token_embedding)
     pe[:, 0::2] = torch.sin(positions_table[:, 0::2])
     pe[:, 1::2] = torch.cos(positions_table[:, 1::2])
 
@@ -108,8 +108,7 @@ class MyVisionPositionalEncoding(torch.nn.Module):
         self,
         number_of_tokens: int,
         size_of_token_embedding: int,
-        is_input_normalized: bool,
-        dtype: torch.dtype
+        is_input_normalized: bool
     ):
         """
         Args:
@@ -125,10 +124,13 @@ class MyVisionPositionalEncoding(torch.nn.Module):
         self.scaler = scaler
         self.number_of_tokens = number_of_tokens
         self.size_of_token_embedding = size_of_token_embedding
-        self.dtype = dtype
 
-        self.pe = self.__initialize_positional_encoding()
-        self.register_buffer('pe_buffer', self.pe)  # Register positional encoding as buffer
+        pos_enc_table = self.__initialize_positional_encoding()
+        """
+        Register the constant tensor as a buffer so that it is part of the module's state,
+        but it is not a learnable parameter.
+        """
+        self.register_buffer('pe_buffer', pos_enc_table)  # Register positional encoding as buffer
 
         if is_input_normalized:
             """
@@ -150,17 +152,24 @@ class MyVisionPositionalEncoding(torch.nn.Module):
     def __initialize_positional_encoding(self) -> torch.Tensor:
         return self.__transform_positional_encoding_tensor(
             get_positional_encoding_tensor(
-                self.number_of_tokens, self.size_of_token_embedding, self.dtype
+                self.number_of_tokens, self.size_of_token_embedding
             ),
             self.scaler,
         ).unsqueeze(0)
 
-    def set_batch_size(self, batch_size: int):
-        self.pe = self.__initialize_positional_encoding()
-        self.pe = self.pe.repeat(batch_size, 1, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
+
+        If two tensors x, y are “broadcastable”, the resulting tensor size is calculated as follows:
+        If the number of dimensions of x and y are not equal,
+        prepend 1 to the dimensions of the tensor with fewer dimensions to make them equal length.
+        Then, for each dimension size, the resulting dimension size is the max of the sizes of x and y along that dimension.
+        Source: https://pytorch.org/docs/stable/notes/broadcasting.html
+
+        In this example "pe" has shape (1, number_of_tokens, size_of_token_embedding) and "x" has shape (batch_size, number_of_tokens, size_of_token_embedding)
+        The "pe" tensor is broadcasted to the shape (batch_size, number_of_tokens, size_of_token_embedding)
+
         Args:
             x: Input tensor of shape (batch_size, seq_len, size_of_token_embedding)
             or in other words (batch_size, height, width) # one channel
@@ -168,8 +177,7 @@ class MyVisionPositionalEncoding(torch.nn.Module):
             x: The input tensor plus the positional encodings (same shape as input) normalized to [0, 1]
         """
         # Add positional encodings to the input tensor
-        return (x + self.pe) / self.scaling_factor
-
+        return (x + self.pe_buffer) / self.scaling_factor
 
 def positional_encoding_tensor_to_opencv_image(tensor: torch.Tensor) -> np.ndarray:
     """
@@ -184,8 +192,8 @@ def positional_encoding_tensor_to_opencv_image(tensor: torch.Tensor) -> np.ndarr
     return (tensor.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
 
 
-if __name__ == "__main__":
-    # Test the positional encoding
+# Test the positional encoding
+def __preview_positional_encoding():
     num_tokens = 640
     token_lens = [640, 768, 896, 1024]
     images = []
@@ -204,3 +212,11 @@ if __name__ == "__main__":
         )
         cv2.imshow(f"output-{token_len}", out_image)
     cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    myPe = MyVisionPositionalEncoding(10, 10, is_input_normalized=False)
+    myPe.to(dtype=torch.float16)
+    test_tensor = torch.rand(1, 10, 10, dtype=torch.float16) * 255
+    print('output', myPe(test_tensor).dtype)
+

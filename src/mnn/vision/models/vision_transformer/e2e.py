@@ -1,3 +1,4 @@
+import time
 import torch
 import torch.nn
 
@@ -9,10 +10,13 @@ from mnn.vision.models.vision_transformer.encoder.vit_encoder import (
 )
 from mnn.vision.models.vision_transformer.encoder.vit_encoder_combinators import (
     ThreeChannelsCombinatorToThreeChannels,
+    ThreeChannelsCombinator,
 )
 import mnn.vision.models.vision_transformer.positional_encoders.sinusoidal as mnn_sinusoidal_positional_encoders
+import mnn.vision.models.vision_transformer.encoder.utils as mnn_encoder_utils
 
 
+# Experimental Module
 class EncoderCombinator(torch.nn.Module):
     def __init__(self, encoder: RawVisionTransformerMultiChannelEncoder):
         super().__init__()
@@ -25,6 +29,7 @@ class EncoderCombinator(torch.nn.Module):
         return x
 
 
+# Experimental Module
 class EncoderCombinatorStack(torch.nn.Module):
     def __init__(
         self,
@@ -57,50 +62,41 @@ class EncoderCombinatorStack(torch.nn.Module):
         return self.encoder_combinator_list(x)
 
 
+class RGBCombinator(torch.nn.Module):
+    """
+    An RGB image is 3 x 2D matrices. The idea behind this module is to combine the three channels into a single 2D matrix.
+    """
+
+    def __init__(self, encoder: RawVisionTransformerMultiChannelEncoder):
+        super().__init__()
+        self.encoder = encoder
+        self.combinator = ThreeChannelsCombinator(encoder)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        return self.combinator(x)
+
+
 class MyVisionTransformer(torch.nn.Module):
     def __init__(
         self,
-        encoder_config: mnn_encoder_config.VisionTransformerEncoderConfiguration,
+        vit_config: mnn_encoder_config.MyVisionTransformerConfiguration,
         image_size: mnn.vision.image_size.ImageSize,
-        n_high_level_layers: int,
-        is_input_normalized: bool,
-        dtype: torch.dtype,
     ):
         super().__init__()
 
-        self.positional_encoder = (
-            mnn_sinusoidal_positional_encoders.MyVisionPositionalEncoding(
-                number_of_tokens=image_size.height,
-                size_of_token_embedding=encoder_config.d_model,
-                is_input_normalized=is_input_normalized,
-                dtype=dtype,
+        self.rgb_combinator = RGBCombinator(
+            RawVisionTransformerRGBEncoder(
+                vit_config.rgb_combinator_config,
+                image_size,
+            )
+        )
+        self.transformer_encoder = (
+            mnn_encoder_utils.get_transformer_encoder_from_config(
+                vit_config.encoder_config
             )
         )
 
-        self.encoder_combinator_list = EncoderCombinatorStack(
-            encoder_config,
-            image_size,
-            n_high_level_layers=n_high_level_layers,
-        )
-        self.sigmoid = torch.nn.Sigmoid()
-        self.to(dtype=dtype)
-
-    def set_batch_size(self, batch_size):
-        self.positional_encoder.set_batch_size(batch_size)
-
-    def forward(self, x):
-        x = self.positional_encoder(x)
-        x = self.encoder_combinator_list(x)
-        return x
-
-    def to_dtype(self, dtype: torch.dtype):
-        self.positional_encoder.to(dtype=dtype)
-        for encoder_combinator in self.encoder_combinator_list:
-            encoder_combinator.to(dtype=dtype)
-        self.sigmoid.to(dtype=dtype)
-
-    def to_device(self, device: torch.device):
-        self.positional_encoder.to(device=device)
-        for encoder_combinator in self.encoder_combinator_list:
-            encoder_combinator.to(device=device)
-        self.sigmoid.to(device=device)
+    def forward(self, x: torch.Tensor):
+        x = self.rgb_combinator(x)
+        return self.transformer_encoder(x)

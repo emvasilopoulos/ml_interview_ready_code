@@ -1,5 +1,7 @@
 import dataclasses
 
+import torch
+
 import mnn.vision.image_size
 
 
@@ -23,4 +25,7 @@ class HyperparametersConfiguration:
             hyperparameters_configuration["epochs"],
             hyperparameters_configuration["optimizer"],
             hyperparameters_configuration["learning_rate"],
+            floating_point_precisions[
+                hyperparameters_configuration["floating_point_precision"]
+            ],
         )

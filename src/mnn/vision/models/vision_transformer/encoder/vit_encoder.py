@@ -182,9 +182,19 @@ class RawVisionTransformerEncoder(torch.nn.Module):
             self.input_image_size.height
         )  # scanning image from top to bottom
 
+        modules_layers = []
+        if transformer_encoder_config.has_positional_encoding:
+            self.positional_encoder = mnn_sinusoidal_positional_encoders.MyVisionPositionalEncoding(
+                number_of_tokens=self.sequence_length,
+                size_of_token_embedding=transformer_encoder_config.d_model,
+                is_input_normalized=transformer_encoder_config.is_input_to_positional_encoder_normalized,
+            )
+            modules_layers.append(self.positional_encoder)
         self.encoder_block = mnn_encoder_utils.get_transformer_encoder_from_config(
             transformer_encoder_config
         )
+        modules_layers.append(self.encoder_block)
+        self.raw_vit = torch.nn.Sequential(*modules_layers)
 
     def _check_number_of_channels(self):
         if self.input_image_size.channels != 1:
@@ -196,12 +206,13 @@ class RawVisionTransformerEncoder(torch.nn.Module):
             raise ValueError(error_message)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.encoder_block(x)
+        return self.raw_vit(x)
 
 
 class RawVisionTransformerMultiChannelEncoder(torch.nn.Module):
     """
-    This layer should process a three channel image.
+    This module should process a multi-channel 2D tensor.
+    As a structure, it consists of multiple parallel RawVisionTransformerEncoder modules.
     """
 
     def __init__(
@@ -244,6 +255,11 @@ class RawVisionTransformerMultiChannelEncoder(torch.nn.Module):
                 for _ in range(out_channels)
             ]
         )
+
+    def to_dtype(self, dtype: torch.dtype) -> None:
+        for encoder in self.multi_channels_encoder:
+            encoder.to(dtype=dtype)
+            encoder.position
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_list = [

@@ -3,6 +3,9 @@ import dataclasses
 
 import torch
 
+import mnn.vision.models.vision_transformer.encoder.config as mnn_encoder_config
+import mnn.vision.models.vision_transformer.encoder.utils as mnn_encoder_utils
+
 
 @dataclasses.dataclass
 class HeadInputSize:
@@ -52,7 +55,7 @@ class AddChannelsAndSigmoid2(torch.nn.Module):
         return x
 
 
-class ObjectDetectionOrdinalHead(torch.nn.Module):
+class ObjectDetectionOrdinalHeadExperimental(torch.nn.Module):
 
     def __init__(self, input_size: HeadInputSize):
         super().__init__()
@@ -61,3 +64,23 @@ class ObjectDetectionOrdinalHead(torch.nn.Module):
             self.head = torch.nn.Sigmoid()
         elif input_size.number_of_channels == 3:
             self.head = AddChannelsAndSigmoid2(input_size)
+
+
+class ObjectDetectionOrdinalHead(torch.nn.Module):
+
+    def __init__(
+        self, config: mnn_encoder_config.VisionTransformerEncoderConfiguration
+    ):
+        super().__init__()
+
+        if config.activation != "sigmoid":
+            raise ValueError(
+                "The activation function for the head must be sigmoid if the number of layers is 0"
+            )
+        if config.number_of_layers <= 0:
+            self.layer = torch.nn.Sigmoid()
+        else:
+            self.layer = mnn_encoder_utils.get_transformer_encoder_from_config(config)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.layer(x)
