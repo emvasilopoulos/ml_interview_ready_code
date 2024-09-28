@@ -2,6 +2,7 @@ import dataclasses
 
 import torch
 
+from mnn.torch_utils import FLOATING_POINT_PRECISIONS
 import mnn.vision.image_size
 
 
@@ -12,6 +13,7 @@ class HyperparametersConfiguration:
     epochs: int
     optimizer: str
     learning_rate: float
+    floating_point_precision: torch.dtype
 
     @staticmethod
     def from_dict(
@@ -25,7 +27,7 @@ class HyperparametersConfiguration:
             hyperparameters_configuration["epochs"],
             hyperparameters_configuration["optimizer"],
             hyperparameters_configuration["learning_rate"],
-            floating_point_precisions[
+            FLOATING_POINT_PRECISIONS[
                 hyperparameters_configuration["floating_point_precision"]
             ],
         )

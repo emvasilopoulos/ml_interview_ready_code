@@ -3,6 +3,8 @@ from typing import Any, Dict
 
 import torch
 
+from mnn.torch_utils import FLOATING_POINT_PRECISIONS
+
 
 @dataclasses.dataclass
 class VisionTransformerEncoderConfiguration:
@@ -52,9 +54,6 @@ class VisionTransformerEncoderConfiguration:
             model_configuration["bias"],
             model_configuration["mask_check"],
         )
-
-
-FLOATING_POINT_PRECISIONS = {"float32": torch.float32, "float16": torch.float16}
 
 
 @dataclasses.dataclass

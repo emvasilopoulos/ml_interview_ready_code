@@ -2,6 +2,8 @@ from typing import Any, Callable, Tuple
 import torch
 import torch.nn
 
+FLOATING_POINT_PRECISIONS = {"float32": torch.float32, "float16": torch.float16}
+
 
 def _apply_to_model(
     model: torch.nn.Module,
