@@ -176,7 +176,7 @@ class ObjectDetectionOrdinalTransformation:
         mask_shape: torch.Size,
         original_image_shape: torch.Size,
         rectangles: List[TopLeftWidthHeightRectangle],
-    ):
+    ) -> torch.Tensor:
         mask = torch.zeros(mask_shape)  # (H, W)
 
         for rectangle in rectangles:
@@ -184,6 +184,30 @@ class ObjectDetectionOrdinalTransformation:
             x_normalized = rectangle.left / original_image_shape[1]
             height_normalized = rectangle.height / original_image_shape[0]
             width_normalized = rectangle.width / original_image_shape[1]
+
+            mask_y = int(y_normalized * mask_shape[0])
+            mask_x = int(x_normalized * mask_shape[1])
+            mask_height = int(height_normalized * mask_shape[0])
+            mask_width = int(width_normalized * mask_shape[1])
+
+            ObjectDetectionOrdinalTransformation.encode_rectangle(
+                mask, mask_y, mask_x, mask_height, mask_width
+            )
+        return mask
+
+    @staticmethod
+    def transform_ground_truth_from_normalized_rectangles(
+        mask_shape: torch.Size,
+        rectangles: torch.Tensor,
+    ) -> torch.Tensor:
+        mask = torch.zeros(mask_shape)  # (H, W)
+
+        for i in range(rectangles.shape[0]):
+            rectangle = rectangles[i]
+            x_normalized = rectangle[0]
+            y_normalized = rectangle[1]
+            width_normalized = rectangle[2]
+            height_normalized = rectangle[3]
 
             mask_y = int(y_normalized * mask_shape[0])
             mask_x = int(x_normalized * mask_shape[1])
