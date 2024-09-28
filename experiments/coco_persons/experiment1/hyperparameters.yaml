@@ -6,3 +6,4 @@ batch_size: 16
 epochs: 5 # 5 epochs for testing
 optimizer: adam
 learning_rate: 0.001
+floating_point_precision: float32
