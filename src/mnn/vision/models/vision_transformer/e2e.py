@@ -80,7 +80,7 @@ class RGBCombinator(torch.nn.Module):
 class MyVisionTransformer(torch.nn.Module):
     def __init__(
         self,
-        vit_config: mnn_encoder_config.MyVisionTransformerConfiguration,
+        vit_config: mnn_encoder_config.MyBackboneVitConfiguration,
         image_size: mnn.vision.image_size.ImageSize,
     ):
         super().__init__()

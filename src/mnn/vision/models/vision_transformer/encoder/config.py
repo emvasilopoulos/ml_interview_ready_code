@@ -57,21 +57,13 @@ class VisionTransformerEncoderConfiguration:
 
 
 @dataclasses.dataclass
-class MyVisionTransformerConfiguration:
-    dtype: torch.dtype
+class MyBackboneVitConfiguration:
     rgb_combinator_config: VisionTransformerEncoderConfiguration
     encoder_config: VisionTransformerEncoderConfiguration
 
     @staticmethod
-    def from_dict(
-        model_configuration: Dict[str, Any]
-    ) -> "MyVisionTransformerConfiguration":
-        if not model_configuration["dtype"] in FLOATING_POINT_PRECISIONS:
-            raise ValueError(
-                f"Unsupported dtype {model_configuration['dtype']}. Supported dtypes are {FLOATING_POINT_PRECISIONS.keys()}"
-            )
-        return MyVisionTransformerConfiguration(
-            dtype=FLOATING_POINT_PRECISIONS[model_configuration["dtype"]],
+    def from_dict(model_configuration: Dict[str, Any]) -> "MyBackboneVitConfiguration":
+        return MyBackboneVitConfiguration(
             rgb_combinator_config=VisionTransformerEncoderConfiguration.from_dict(
                 model_configuration["RGBCombinator"]
             ),
