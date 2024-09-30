@@ -31,8 +31,8 @@ class ObjectDetectionOrdinalTransformation:
     It's worth trying focal loss as well.
     """
 
-    INNER_EXPANSION = 10  # in pixels
-    OUTTER_EXPANSION = 5  # in pixels
+    INNER_EXPANSION = 4  # in pixels
+    OUTTER_EXPANSION = 4  # in pixels
     # outter_expansion <= inner_expansion ALWAYS,
     # otherwise when two rectangles are close to each other
     # the mask will be ruined
@@ -75,56 +75,73 @@ class ObjectDetectionOrdinalTransformation:
             # TODO - Fix Corners
             for j in range(0, expansion_size):
                 # Top Left Corner
-                if y - i >= 0 and x - i >= 0:
-                    mask[y - i + j, x - i] = torch.where(
-                        mask[y - i + j, x - i] < probability,
+                y_ij = y - i + j
+                if y_ij >= 0 and y_ij < mask.shape[0] and x - i >= 0:
+                    mask[y_ij, x - i] = torch.where(
+                        mask[y_ij, x - i] < probability,
                         probability,
-                        mask[y - i + j, x - i],
+                        mask[y_ij, x - i],
                     )
-                if y - i >= 0 and x - i >= 0:
-                    mask[y - i, x - i + j] = torch.where(
-                        mask[y - i, x - i + j] < probability,
+
+                x_ij = x - i + j
+                if y - i >= 0 and x_ij >= 0 and x_ij < mask.shape[1]:
+                    mask[y - i, x_ij] = torch.where(
+                        mask[y - i, x_ij] < probability,
                         probability,
-                        mask[y - i, x - i + j],
+                        mask[y - i, x_ij],
                     )
                 # Top Right Corner
-                if y - i >= 0 and x + width + i < mask.shape[1]:
-                    mask[y - i + j, x + width + i] = torch.where(
-                        mask[y - i + j, x + width + i] < probability,
+                y_ij = y - i + j
+                if y_ij >= 0 and y_ij < mask.shape[0] and x + width + i < mask.shape[1]:
+                    mask[y_ij, x + width + i] = torch.where(
+                        mask[y_ij, x + width + i] < probability,
                         probability,
-                        mask[y - i + j, x + width + i],
+                        mask[y_ij, x + width + i],
                     )
-                if y - i >= 0 and x + width + i < mask.shape[1]:
-                    mask[y - i, x + width + i - j] = torch.where(
-                        mask[y - i, x + width + i - j] < probability,
+
+                xw_ij = x + width + i - j
+                if y - i >= 0 and xw_ij >= 0 and xw_ij < mask.shape[1]:
+                    mask[y - i, xw_ij] = torch.where(
+                        mask[y - i, xw_ij] < probability,
                         probability,
-                        mask[y - i, x + width + i - j],
+                        mask[y - i, xw_ij],
                     )
+
                 # Bottom Left Corner
-                if y + height + i < mask.shape[0] and x - i >= 0:
-                    mask[y + height + i - j, x - i] = torch.where(
-                        mask[y + height + i - j, x - i] < probability,
+                yh_ij = y + height + i - j
+                if yh_ij >= 0 and yh_ij < mask.shape[0] and x - i >= 0:
+                    mask[yh_ij, x - i] = torch.where(
+                        mask[yh_ij, x - i] < probability,
                         probability,
-                        mask[y + height + i - j, x - i],
+                        mask[yh_ij, x - i],
                     )
-                if y + height + i < mask.shape[0] and x - i >= 0:
-                    mask[y + height + i, x - i + j] = torch.where(
-                        mask[y + height + i, x - i + j] < probability,
+
+                yh_i = y + height + i
+                x_ij = x - i + j
+                if yh_i < mask.shape[0] and x_ij >= 0 and x_ij < mask.shape[1]:
+                    mask[yh_i, x_ij] = torch.where(
+                        mask[yh_i, x_ij] < probability,
                         probability,
-                        mask[y + height + i, x - i + j],
+                        mask[yh_i, x_ij],
                     )
+
                 # Bottom Right Corner
-                if y + height + i < mask.shape[0] and x + width + i < mask.shape[1]:
-                    mask[y + height + i - j, x + width + i] = torch.where(
-                        mask[y + height + i - j, x + width + i] < probability,
+                yh_ij = y + height + i - j
+                xw_i = x + width + i
+                if yh_i < mask.shape[0] and xw_i < mask.shape[1]:
+                    mask[yh_ij, xw_i] = torch.where(
+                        mask[yh_ij, xw_i] < probability,
                         probability,
-                        mask[y + height + i - j, x + width + i],
+                        mask[yh_ij, xw_i],
                     )
-                if y + height + i < mask.shape[0] and x + width + i < mask.shape[1]:
-                    mask[y + height + i, x + width + i - j] = torch.where(
-                        mask[y + height + i, x + width + i - j] < probability,
+
+                yh_i = y + height + i
+                xw_ij = x + width + i - j
+                if yh_i < mask.shape[0] and xw_ij >= 0 and xw_ij < mask.shape[1]:
+                    mask[yh_i, xw_ij] = torch.where(
+                        mask[yh_i, xw_ij] < probability,
                         probability,
-                        mask[y + height + i, x + width + i - j],
+                        mask[yh_i, xw_ij],
                     )
         return mask
 
