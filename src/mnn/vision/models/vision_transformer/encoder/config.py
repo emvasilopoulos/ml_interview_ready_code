@@ -1,10 +1,6 @@
 import dataclasses
 from typing import Any, Dict
 
-import torch
-
-from mnn.torch_utils import FLOATING_POINT_PRECISIONS
-
 
 @dataclasses.dataclass
 class VisionTransformerEncoderConfiguration:
