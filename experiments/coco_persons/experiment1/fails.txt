@@ -1,0 +1,2 @@
+# hyperparameters_fail1.yaml + model_fail.yaml
+loss circled from 0.15 to 0.2 for everything after 20k samples during the first epoch
