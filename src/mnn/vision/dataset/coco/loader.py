@@ -1,4 +1,5 @@
 import abc
+import random
 from typing import Any, Dict, List, Tuple
 import json
 import os
@@ -8,6 +9,9 @@ import torch
 import cv2
 import numpy as np
 import numpy.typing as npt
+
+import mnn.vision.dataset.object_detection.preprocessing
+import mnn.vision.image_size
 
 
 class RawCOCOAnnotationsParser:
@@ -45,6 +49,9 @@ class RawCOCOAnnotationsParser:
 
 
 class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
+    preprocessor = (
+        mnn.vision.dataset.object_detection.preprocessing.ObjectDetectionPreprocessing
+    )
 
     @abc.abstractmethod
     def get_year(self) -> int:
@@ -60,7 +67,13 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
         """
         pass
 
-    def __init__(self, data_dir: pathlib.Path, split: str):
+    def __init__(
+        self,
+        data_dir: pathlib.Path,
+        split: str,
+        expected_image_size: mnn.vision.image_size.ImageSize,
+        classes: List[str] = None,
+    ):
         """
         Args:
             data_dir (str): path to the COCO dataset directory.
@@ -71,6 +84,7 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
 
         self.data_dir = data_dir
         self.split = split
+        self.expected_image_size = expected_image_size
         year = self.get_year()
         coco_type = self.get_type()
 
@@ -82,9 +96,10 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
         )
 
         self.images = None
-        self.annotations = None
+        self.annotations: Dict[str, Any] = None
 
         self._load_json_data()
+        self.desired_classes = classes
 
     def _load_json_data(self):
         with open(self.annotations_path, "r") as f:
@@ -100,40 +115,58 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
         image_sample_i = self.images[idx]
         filename = image_sample_i["file_name"]
         sample_i_id = str(image_sample_i["id"])
-        annotations = self.annotations[sample_i_id]
+        annotations = self.annotations.get(sample_i_id, [])
 
         # Prepare input
         img = cv2.imread(self.images_dir / filename)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
+        padding_percent = random.random()
+        img_tensor = self.preprocessor.cv2_image_to_tensor(img)
+        img_tensor = self.preprocessor.preprocess_image(
+            img_tensor, self.expected_image_size, padding_percent=padding_percent
+        )
         # Prepare output
-        return self.get_output(img, annotations)
+        output0 = self.get_output(img, annotations, padding_percent=padding_percent)
+        return img_tensor, output0
 
     @abc.abstractmethod
-    def get_output(
-        self, img: np.ndarray, annotations: Dict[str, Any]
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def get_output(self, img: np.ndarray, annotations: Dict[str, Any]) -> torch.Tensor:
         pass
 
 
 class BaseCOCODatasetInstances(BaseCOCODatasetGrouped):
 
     def get_output(
-        self, img: npt.NDArray[np.uint8], annotations: Dict[str, Any]
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self,
+        img: npt.NDArray[np.uint8],
+        annotations: Dict[str, Any],
+        padding_percent: float = 0,
+    ) -> torch.Tensor:
         bboxes = []
         categories = []
         img_h, img_w = img.shape[0], img.shape[1]
         for annotation in annotations:
+            category = int(annotation["category_id"])
+            if (
+                self.desired_classes is not None
+                and category not in self.desired_classes
+            ):
+                continue
             x1, y1, w, h = annotation["bbox"]
             bboxes.append([x1 / img_w, y1 / img_h, w / img_w, h / img_h])
             categories.append(annotation["category_id"])
 
-        return (
-            torch.from_numpy(img).permute(2, 0, 1),
-            torch.Tensor(bboxes).float(),
-            torch.Tensor(categories).float(),
+        bboxes_as_mask = self.preprocessor.bbox_annotation_to_mask(
+            torch.Tensor(bboxes).float(), torch.Size((img_h, img_w))
         )
+        bboxes_as_mask = self.preprocessor.adjust_tensor_dimensions(
+            bboxes_as_mask, self.expected_image_size, padding_percent=padding_percent
+        )
+
+        # TODO - support categories somehow
+
+        return bboxes_as_mask
 
 
 class COCODatasetInstances2017(BaseCOCODatasetInstances):
