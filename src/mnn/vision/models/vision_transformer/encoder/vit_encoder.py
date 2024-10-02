@@ -184,16 +184,16 @@ class RawVisionTransformerEncoder(torch.nn.Module):
 
         modules_layers = []
         if transformer_encoder_config.has_positional_encoding:
-            self.positional_encoder = mnn_sinusoidal_positional_encoders.MyVisionPositionalEncoding(
+            positional_encoder = mnn_sinusoidal_positional_encoders.MyVisionPositionalEncoding(
                 number_of_tokens=self.sequence_length,
                 size_of_token_embedding=transformer_encoder_config.d_model,
                 is_input_normalized=transformer_encoder_config.is_input_to_positional_encoder_normalized,
             )
-            modules_layers.append(self.positional_encoder)
-        self.encoder_block = mnn_encoder_utils.get_transformer_encoder_from_config(
+            modules_layers.append(positional_encoder)
+        encoder_block = mnn_encoder_utils.get_transformer_encoder_from_config(
             transformer_encoder_config
         )
-        modules_layers.append(self.encoder_block)
+        modules_layers.append(encoder_block)
         self.raw_vit = torch.nn.Sequential(*modules_layers)
 
     def _check_number_of_channels(self):
