@@ -8,6 +8,13 @@ activation_functions = {
 }
 
 
+def get_activation_from_config(
+    transformer_encoder_config: mnn_encoder_config.VisionTransformerEncoderConfiguration,
+):
+    activation_name = transformer_encoder_config.activation
+    return activation_functions[activation_name]
+
+
 def get_transformer_encoder_from_config(
     transformer_encoder_config: mnn_encoder_config.VisionTransformerEncoderConfiguration,
 ):
@@ -23,19 +30,29 @@ def get_transformer_encoder_from_config(
         dim_feedforward=ff_dim,
         activation=activation,
         batch_first=True,
+        dropout=0.1,  # Default
     )
-
-    layer_norm_eps = transformer_encoder_config.eps
-    bias = transformer_encoder_config.bias
-    encoder_norm = torch.nn.LayerNorm(d_model, eps=layer_norm_eps, bias=bias)
-
     num_layers = transformer_encoder_config.number_of_layers
-    return torch.nn.TransformerEncoder(
-        encoder_layer=encoder_layer,
-        num_layers=num_layers,
-        norm=encoder_norm,
-        mask_check=transformer_encoder_config.mask_check,
-    )
+
+    if transformer_encoder_config.layer_norm_config.has_layer_norm:
+        layer_norm_eps = transformer_encoder_config.layer_norm_config.eps
+        bias = transformer_encoder_config.layer_norm_config.bias
+        encoder_norm = torch.nn.LayerNorm(d_model, eps=layer_norm_eps, bias=bias)
+
+        return torch.nn.TransformerEncoder(
+            encoder_layer=encoder_layer,
+            num_layers=num_layers,
+            norm=encoder_norm,
+            mask_check=transformer_encoder_config.mask_check,
+            enable_nested_tensor=False,  # Using ReLU or GELU so either way it is not using nested tensor
+        )
+    else:
+        return torch.nn.TransformerEncoder(
+            encoder_layer=encoder_layer,
+            num_layers=num_layers,
+            mask_check=transformer_encoder_config.mask_check,
+            enable_nested_tensor=False,  # Using ReLU or GELU so either way it is not using nested tensor
+        )
 
 
 if __name__ == "__main__":
