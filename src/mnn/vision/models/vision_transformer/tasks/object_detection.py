@@ -73,14 +73,10 @@ class ObjectDetectionOrdinalHead(torch.nn.Module):
     ):
         super().__init__()
 
-        if config.activation != "sigmoid":
-            raise ValueError(
-                "The activation function for the head must be sigmoid if the number of layers is 0"
-            )
-        if config.number_of_layers <= 0:
-            self.layer = torch.nn.Sigmoid()
-        else:
+        if config.number_of_layers > 0:
             self.layer = mnn_encoder_utils.get_transformer_encoder_from_config(config)
+        else:
+            raise ValueError()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.layer(x)
