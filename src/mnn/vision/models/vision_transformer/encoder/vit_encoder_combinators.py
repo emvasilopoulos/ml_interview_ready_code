@@ -15,7 +15,9 @@ class MultiChannelsCombinator(torch.nn.Module):
     """
 
     def __init__(
-        self, previous_encoder_block: mnn_vit_encoder.RawVisionTransformerRGBEncoder
+        self,
+        previous_encoder_block: mnn_vit_encoder.RawVisionTransformerRGBEncoder,
+        activation: torch.nn.Module,
     ):
         super().__init__()
         n_channels, h, w = previous_encoder_block.EXPECTED_OUTPUT_TENSOR
@@ -24,11 +26,14 @@ class MultiChannelsCombinator(torch.nn.Module):
             data=mnn.torch_utils.initialize_weights(torch.Size([n_channels, h, w]))
         )
 
+        self.activation = activation
+
     def forward(self, previous_encoder_output: torch.Tensor) -> torch.Tensor:
         # Element-wise multiplication
         x = previous_encoder_output * self.weights
         # Sum along the channel dimension
-        return torch.sum(x, dim=1)
+        x = torch.sum(x, dim=1)
+        return self.activation(x)
 
 
 class ThreeChannelsCombinator(MultiChannelsCombinator):
@@ -41,9 +46,11 @@ class ThreeChannelsCombinator(MultiChannelsCombinator):
     """
 
     def __init__(
-        self, previous_encoder_block: mnn_vit_encoder.RawVisionTransformerRGBEncoder
+        self,
+        previous_encoder_block: mnn_vit_encoder.RawVisionTransformerRGBEncoder,
+        activation: torch.nn.Module,
     ):
-        super().__init__(previous_encoder_block)
+        super().__init__(previous_encoder_block, activation)
         n_channels, _, _ = previous_encoder_block.EXPECTED_OUTPUT_TENSOR
         if n_channels != 3:
             raise ValueError(
@@ -79,11 +86,15 @@ class ThreeChannelsCombinatorToThreeChannels(torch.nn.Module):
     def __init__(
         self,
         previous_encoder_block: mnn_vit_encoder.RawVisionTransformerRGBEncoder,
+        activation: torch.nn.Module,
     ):
         super().__init__()
 
         self.to_three_channels = torch.nn.ModuleList(
-            [ThreeChannelsCombinator(previous_encoder_block) for _ in range(3)]
+            [
+                ThreeChannelsCombinator(previous_encoder_block, activation)
+                for _ in range(3)
+            ]
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -102,12 +113,13 @@ class MultiChannelsCombinatorToMultiChannels(torch.nn.Module):
         self,
         previous_encoder_block: mnn_vit_encoder.RawVisionTransformerMultiChannelEncoder,
         out_channels: int,
+        activation: torch.nn.Module,
     ):
         super().__init__()
 
         self.to_three_channels = torch.nn.ModuleList(
             [
-                MultiChannelsCombinator(previous_encoder_block)
+                MultiChannelsCombinator(previous_encoder_block, activation)
                 for _ in range(out_channels)
             ]
         )

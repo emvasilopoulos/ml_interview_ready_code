@@ -1,4 +1,3 @@
-import time
 import torch
 import torch.nn
 
@@ -67,10 +66,14 @@ class RGBCombinator(torch.nn.Module):
     An RGB image is 3 x 2D matrices. The idea behind this module is to combine the three channels into a single 2D matrix.
     """
 
-    def __init__(self, encoder: RawVisionTransformerMultiChannelEncoder):
+    def __init__(
+        self,
+        encoder: RawVisionTransformerMultiChannelEncoder,
+        combinator_activation: torch.nn.Module,
+    ):
         super().__init__()
         self.encoder = encoder
-        self.combinator = ThreeChannelsCombinator(encoder)
+        self.combinator = ThreeChannelsCombinator(encoder, combinator_activation)
 
     def forward(self, x):
         x = self.encoder(x)
@@ -85,11 +88,15 @@ class MyVisionTransformer(torch.nn.Module):
     ):
         super().__init__()
 
+        combinator_activation = mnn_encoder_utils.get_activation_from_config(
+            vit_config.rgb_combinator_config
+        )
         self.rgb_combinator = RGBCombinator(
-            RawVisionTransformerRGBEncoder(
+            encoder=RawVisionTransformerRGBEncoder(
                 vit_config.rgb_combinator_config,
                 image_size,
-            )
+            ),
+            combinator_activation=combinator_activation,
         )
         self.transformer_encoder = (
             mnn_encoder_utils.get_transformer_encoder_from_config(
