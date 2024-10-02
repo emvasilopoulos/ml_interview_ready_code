@@ -6,10 +6,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.pt
+*.pth
 *.csv
 *.jpg
 *.png
-
 # C extensions
 *.so
 
