@@ -1,5 +1,6 @@
 from collections import namedtuple
 import distutils.version
+import pathlib
 from typing import Any, Dict, List
 import graphviz
 import torch
@@ -193,3 +194,13 @@ def resize_graph(
     size = max(min_size, content_size)
     size_str = str(size) + "," + str(size)
     dot.graph_attr.update(size=size_str)
+
+
+def save_model_graph_as_png(
+    model: torch.nn.Module, example_input: torch.Tensor, save_path: pathlib.Path
+):
+
+    output = model(example_input)
+    make_dot(output, params=dict(model.named_parameters())).render(
+        save_path.as_posix(), format="png"
+    )
