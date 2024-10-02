@@ -1,0 +1,5 @@
+batch_size: 8 # 16 is too big for RTX A2000 with 8GB RAM
+epochs: 30
+optimizer: adamw
+learning_rate: 0.001
+floating_point_precision: float32

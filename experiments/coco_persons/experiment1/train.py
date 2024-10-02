@@ -220,7 +220,10 @@ if __name__ == "__main__":
     validation_image = prepare_validation_image().to(
         device, dtype=hyperparameters_config.floating_point_precision
     )
+    print(validation_image.shape)
     temp_out = object_detection_model(validation_image)
+    print(temp_out.shape)
+    exit()
     write_validation_image_with_predicted_mask(
         temp_out, validation_image, f"epoch_{0}_id_test"
     )
