@@ -31,8 +31,8 @@ class ObjectDetectionOrdinalTransformation:
     It's worth trying focal loss as well.
     """
 
-    INNER_EXPANSION = 4  # in pixels
-    OUTTER_EXPANSION = 4  # in pixels
+    INNER_EXPANSION = 10  # in pixels
+    OUTTER_EXPANSION = 10  # in pixels
     # outter_expansion <= inner_expansion ALWAYS,
     # otherwise when two rectangles are close to each other
     # the mask will be ruined
