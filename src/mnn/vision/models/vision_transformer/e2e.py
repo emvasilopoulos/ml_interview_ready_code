@@ -88,22 +88,27 @@ class MyVisionTransformer(torch.nn.Module):
     ):
         super().__init__()
 
-        combinator_activation = mnn_encoder_utils.get_activation_from_config(
+        layers = []
+        combinator_activation = mnn_encoder_utils.get_combinator_activation_from_config(
             vit_config.rgb_combinator_config
         )
-        self.rgb_combinator = RGBCombinator(
-            encoder=RawVisionTransformerRGBEncoder(
-                vit_config.rgb_combinator_config,
-                image_size,
-            ),
-            combinator_activation=combinator_activation,
-        )
-        self.transformer_encoder = (
-            mnn_encoder_utils.get_transformer_encoder_from_config(
-                vit_config.encoder_config
+        layers.append(
+            RGBCombinator(
+                encoder=RawVisionTransformerRGBEncoder(
+                    vit_config.rgb_combinator_config,
+                    image_size,
+                ),
+                combinator_activation=combinator_activation,
             )
         )
+        if vit_config.encoder_config.number_of_layers > 0:
+            layers.append(
+                mnn_encoder_utils.get_transformer_encoder_from_config(
+                    vit_config.encoder_config
+                )
+            )
+
+        self.my_vit = torch.nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor):
-        x = self.rgb_combinator(x)
-        return self.transformer_encoder(x)
+        return self.my_vit(x)
