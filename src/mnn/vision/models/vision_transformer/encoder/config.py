@@ -48,7 +48,7 @@ class VisionTransformerEncoderConfiguration:
     layer_norm_config: LayerNormConfiguration
 
     # whether to check for mask in forward pass
-    mask_check: bool = False
+    mask_check: bool
 
     @staticmethod
     def from_dict(
@@ -72,6 +72,29 @@ class VisionTransformerEncoderConfiguration:
 
 
 @dataclasses.dataclass
+class CombinatorConfiguration(VisionTransformerEncoderConfiguration):
+    combinator_activation: str
+
+    @staticmethod
+    def from_dict(model_configuration: Dict[str, Any]) -> "CombinatorConfiguration":
+        vit_config = VisionTransformerEncoderConfiguration.from_dict(
+            model_configuration
+        )
+        return CombinatorConfiguration(
+            has_positional_encoding=vit_config.has_positional_encoding,
+            is_input_to_positional_encoder_normalized=vit_config.is_input_to_positional_encoder_normalized,
+            number_of_layers=vit_config.number_of_layers,
+            d_model=vit_config.d_model,
+            n_heads=vit_config.n_heads,
+            activation=vit_config.activation,
+            feed_forward_dimensions=vit_config.feed_forward_dimensions,
+            layer_norm_config=vit_config.layer_norm_config,
+            mask_check=vit_config.mask_check,
+            combinator_activation=model_configuration["combinator_activation"],
+        )
+
+
+@dataclasses.dataclass
 class MyBackboneVitConfiguration:
     rgb_combinator_config: VisionTransformerEncoderConfiguration
     encoder_config: VisionTransformerEncoderConfiguration
@@ -79,7 +102,7 @@ class MyBackboneVitConfiguration:
     @staticmethod
     def from_dict(model_configuration: Dict[str, Any]) -> "MyBackboneVitConfiguration":
         return MyBackboneVitConfiguration(
-            rgb_combinator_config=VisionTransformerEncoderConfiguration.from_dict(
+            rgb_combinator_config=CombinatorConfiguration.from_dict(
                 model_configuration["RGBCombinator"]
             ),
             encoder_config=VisionTransformerEncoderConfiguration.from_dict(
