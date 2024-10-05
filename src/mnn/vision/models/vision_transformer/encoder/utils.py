@@ -1,10 +1,36 @@
 import torch
 import mnn.vision.models.vision_transformer.encoder.config as mnn_encoder_config
 
-activation_functions = {
-    "sigmoid": torch.nn.Sigmoid(),
+TRANSFORMER_ACTIVATIONS = {
     "relu": torch.nn.ReLU(),
     "gelu": torch.nn.GELU(),
+}
+
+ALL_ACTIVATIONS = {
+    "relu": torch.nn.ReLU(),
+    "gelu": torch.nn.GELU(),
+    "sigmoid": torch.nn.Sigmoid(),
+    "tanh": torch.nn.Tanh(),
+    "identity": torch.nn.Identity(),
+    "leaky_relu": torch.nn.LeakyReLU(),
+    "elu": torch.nn.ELU(),
+    "selu": torch.nn.SELU(),
+    "softplus": torch.nn.Softplus(),
+    "softshrink": torch.nn.Softshrink(),
+    "softsign": torch.nn.Softsign(),
+    "hardshrink": torch.nn.Hardshrink(),
+    "tanhshrink": torch.nn.Tanhshrink(),
+    "hardtanh": torch.nn.Hardtanh(),
+    "log_sigmoid": torch.nn.LogSigmoid(),
+    "softmin": torch.nn.Softmin(),
+    "softmax": torch.nn.Softmax(),
+    "log_softmax": torch.nn.LogSoftmax(),
+    "hardsigmoid": torch.nn.Hardsigmoid(),
+    "hardswish": torch.nn.Hardswish(),
+    "mish": torch.nn.Mish(),
+    "silu": torch.nn.SiLU(),
+    "celu": torch.nn.CELU(),
+    "glu": torch.nn.GLU(),
 }
 
 
@@ -12,7 +38,14 @@ def get_activation_from_config(
     transformer_encoder_config: mnn_encoder_config.VisionTransformerEncoderConfiguration,
 ):
     activation_name = transformer_encoder_config.activation
-    return activation_functions[activation_name]
+    return TRANSFORMER_ACTIVATIONS[activation_name]
+
+
+def get_combinator_activation_from_config(
+    transformer_encoder_config: mnn_encoder_config.CombinatorConfiguration,
+):
+    activation_name = transformer_encoder_config.combinator_activation
+    return ALL_ACTIVATIONS[activation_name]
 
 
 def get_transformer_encoder_from_config(
@@ -22,8 +55,12 @@ def get_transformer_encoder_from_config(
     n_head = transformer_encoder_config.n_heads
     ff_dim = transformer_encoder_config.feed_forward_dimensions
     activation_name = transformer_encoder_config.activation
-    activation = activation_functions[activation_name]
+    activation = TRANSFORMER_ACTIVATIONS[activation_name]
 
+    """
+    # TODO - read https://arxiv.org/pdf/2002.04745v1.pdf to decide if norm_first should be True or False
+    # Also, PyTorch vit does norm_first = True https://github.com/pytorch/vision/blob/main/torchvision/models/vision_transformer.py 
+    """
     encoder_layer = torch.nn.TransformerEncoderLayer(
         d_model=d_model,
         nhead=n_head,
@@ -31,6 +68,7 @@ def get_transformer_encoder_from_config(
         activation=activation,
         batch_first=True,
         dropout=0.1,  # Default
+        norm_first=True,
     )
     num_layers = transformer_encoder_config.number_of_layers
 
