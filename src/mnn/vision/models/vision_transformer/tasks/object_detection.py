@@ -74,9 +74,11 @@ class ObjectDetectionOrdinalHead(torch.nn.Module):
         super().__init__()
 
         if config.number_of_layers > 0:
-            self.layer = mnn_encoder_utils.get_transformer_encoder_from_config(config)
+            self.transformer_encoder = (
+                mnn_encoder_utils.get_transformer_encoder_from_config(config)
+            )
         else:
             raise ValueError()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.layer(x)
+        return self.transformer_encoder(x)
