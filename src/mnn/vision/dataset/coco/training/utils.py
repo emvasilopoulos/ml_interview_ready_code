@@ -73,9 +73,7 @@ def prepare_validation_image(
     expected_image_size: mnn.vision.image_size.ImageSize,
 ):
 
-    preprocessor = (
-        mnn.vision.dataset.object_detection.preprocessing.ObjectDetectionPreprocessing
-    )
+    preprocessor = mnn.vision.dataset.object_detection.preprocessing.FadedBboxMasks
     img = cv2.imread(validation_image_path.as_posix())
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     padding_percent = random.random()
