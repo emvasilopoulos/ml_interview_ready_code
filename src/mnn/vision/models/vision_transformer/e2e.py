@@ -112,3 +112,68 @@ class MyVisionTransformer(torch.nn.Module):
 
     def forward(self, x: torch.Tensor):
         return self.my_vit(x)
+
+
+import dataclasses
+
+
+class DoubleRGBCombinator(torch.nn.Module):
+    def __init__(
+        self,
+        vit_config: mnn_encoder_config.MyBackboneVitConfiguration,
+        image_size: mnn.vision.image_size.ImageSize,
+    ):
+        super().__init__()
+
+        combinator_activation = mnn_encoder_utils.get_combinator_activation_from_config(
+            vit_config.rgb_combinator_config
+        )
+
+        # Expects images (batch, ch, h, w)
+        vit_config_w = vit_config.rgb_combinator_config
+        self.rgb_combinator_w = RGBCombinator(
+            encoder=RawVisionTransformerRGBEncoder(
+                vit_config_w,
+                image_size,
+            ),
+            combinator_activation=combinator_activation,
+        )
+
+        # Expects images (batch, ch, w, h)
+        vit_config_h = dataclasses.replace(vit_config.rgb_combinator_config)
+        temp = vit_config_h.d_model
+        vit_config_h.d_model = vit_config_h.feed_forward_dimensions
+        vit_config_h.feed_forward_dimensions = temp
+        image_size_h = mnn.vision.image_size.ImageSize(
+            width=image_size.height, height=image_size.width
+        )
+        self.rgb_combinator_h = RGBCombinator(
+            encoder=RawVisionTransformerRGBEncoder(
+                vit_config_h,
+                image_size_h,
+            ),
+            combinator_activation=combinator_activation,
+        )
+
+        self.layer_w = torch.nn.Linear(
+            in_features=vit_config_w.d_model, out_features=vit_config_w.d_model
+        )
+        self.layer_h = torch.nn.Linear(
+            in_features=vit_config_h.d_model, out_features=vit_config_h.d_model
+        )
+        self.dropout = torch.nn.Dropout(p=0.1)
+        self.activation = combinator_activation
+
+    def forward(self, x: torch.Tensor):
+        x_w = self.rgb_combinator_w(x)
+        x_w = self.layer_w(x_w)
+        x_w = self.dropout(x_w)
+        x_w = self.activation(x_w)
+
+        x_h = x.permute(0, 1, 3, 2)
+        x_h = self.rgb_combinator_h(x_h)
+        x_h = self.layer_h(x_h)
+        x_h = self.dropout(x_h)
+        x_h = self.activation(x_h).permute(0, 2, 1)
+
+        return self.activation(x_w + x_h)
