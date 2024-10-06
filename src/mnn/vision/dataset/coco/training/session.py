@@ -46,10 +46,14 @@ def train_one_epoch(
     val_counter = 0
     for i, (image_batch, target0) in enumerate(train_loader):
         image_batch = image_batch.to(
-            device=device, dtype=hyperparameters_config.floating_point_precision
+            device=device,
+            dtype=hyperparameters_config.floating_point_precision,
+            non_blocking=True,  # Requires data loader use flag 'pin_memory=True'
         )
         target0 = target0.to(
-            device=device, dtype=hyperparameters_config.floating_point_precision
+            device=device,
+            dtype=hyperparameters_config.floating_point_precision,
+            non_blocking=True,  # Requires data loader use flag 'pin_memory=True'
         )
 
         if io_transform is not None:
@@ -92,7 +96,6 @@ def train_one_epoch(
             .item()
         )
         if writer is not None:
-            writer.add_scalar("Loss/train", current_loss, training_step)
             writer.add_scalar(
                 "IoU_0.25/train",
                 current_iou_025,
@@ -108,6 +111,7 @@ def train_one_epoch(
                 current_iou_075,
                 training_step,
             )
+            writer.add_scalar("Loss/train", current_loss, training_step)
 
         running_loss += current_loss
         running_iou_025 += current_iou_025
@@ -150,10 +154,14 @@ def val_once(
         running_iou_075 = 0
         for i, (image_batch, target0) in enumerate(val_loader):
             image_batch = image_batch.to(
-                device=device, dtype=hyperparameters_config.floating_point_precision
+                device=device,
+                dtype=hyperparameters_config.floating_point_precision,
+                non_blocking=True,  # Requires data loader use flag 'pin_memory=True'
             )
             target0 = target0.to(
-                device=device, dtype=hyperparameters_config.floating_point_precision
+                device=device,
+                dtype=hyperparameters_config.floating_point_precision,
+                non_blocking=True,  # Requires data loader use flag 'pin_memory=True'
             )
 
             if io_transform is not None:
@@ -186,7 +194,6 @@ def val_once(
             )
             validation_step = i + current_epoch * len(val_loader)
             if writer is not None:
-                writer.add_scalar("Loss/val", current_loss, validation_step)
                 writer.add_scalar(
                     "IoU_0.25/val",
                     current_iou_025,
@@ -202,6 +209,7 @@ def val_once(
                     current_iou_075,
                     i + current_epoch * len(val_loader),
                 )
+                writer.add_scalar("Loss/val", current_loss, validation_step)
 
             running_loss += current_loss
             running_iou_025 += current_iou_025
