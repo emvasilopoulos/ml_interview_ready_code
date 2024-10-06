@@ -1,7 +1,6 @@
 import torch
 import torch.nn
 
-import mnn.torch_utils
 import mnn.vision.models.vision_transformer.encoder.vit_encoder as mnn_vit_encoder
 
 
@@ -16,24 +15,44 @@ class MultiChannelsCombinator(torch.nn.Module):
 
     def __init__(
         self,
-        previous_encoder_block: mnn_vit_encoder.RawVisionTransformerRGBEncoder,
+        previous_encoder_block: mnn_vit_encoder.RawVisionTransformerMultiChannelEncoder,
         activation: torch.nn.Module,
     ):
         super().__init__()
-        n_channels, h, w = previous_encoder_block.EXPECTED_OUTPUT_TENSOR
+        self.n_channels, self.h, self.w = previous_encoder_block.EXPECTED_OUTPUT_TENSOR
 
-        self.weights = torch.nn.Parameter(
-            data=mnn.torch_utils.initialize_weights(torch.Size([n_channels, h, w]))
+        self.layer_w = torch.nn.Linear(
+            in_features=self.w, out_features=self.w, bias=True
         )
-
+        self.layer_h = torch.nn.Linear(
+            in_features=self.h, out_features=self.h, bias=True
+        )
+        self.layer_hw = torch.nn.Linear(
+            in_features=self.w, out_features=self.w, bias=True
+        )
+        self.layers_activation = activation
+        self.dropout = torch.nn.Dropout(p=0.1)
         self.activation = activation
 
     def forward(self, previous_encoder_output: torch.Tensor) -> torch.Tensor:
-        # Element-wise multiplication
-        x = previous_encoder_output * self.weights
-        # Sum along the channel dimension
-        x = torch.sum(x, dim=1)
-        return self.activation(x)
+        # branch 1
+        x_w = self.layer_w(previous_encoder_output)
+        x_w = self.dropout(x_w)
+        x_w = self.layers_activation(x_w)
+
+        # branch 2
+        x_h = self.layer_h(
+            previous_encoder_output.view(-1, self.n_channels, self.w, self.h)
+        )
+        x_h = self.dropout(x_h)
+        x_h = self.layers_activation(x_h)
+        x_h = self.layer_hw(x_h.view(-1, self.n_channels, self.h, self.w))
+        x_h = self.dropout(x_h)
+        x_h = self.layers_activation(x_h)
+
+        # branch 1 + branch 2 + previous_encoder_output (residual connection)
+        z = x_w + x_h + previous_encoder_output
+        return self.activation(torch.sum(z, dim=1))
 
 
 class ThreeChannelsCombinator(MultiChannelsCombinator):
@@ -56,25 +75,6 @@ class ThreeChannelsCombinator(MultiChannelsCombinator):
             raise ValueError(
                 f"Expected 3 channels, got {self.n_channels} channels instead."
             )
-
-    """
-    Broken Down:
-    self.weights_r = torch.nn.Parameter(
-            torch.randn((previous_block_output_height, previous_block_output_width))
-        )
-    self.weights_g = torch.nn.Parameter(
-        torch.randn((previous_block_output_height, previous_block_output_width))
-    )
-    self.weights_b = torch.nn.Parameter(
-        torch.randn((previous_block_output_height, previous_block_output_width))
-    )
-    ~~~~~~~~~~~~~~~~~~~
-    output_vec = (
-        previous_encoder_output[:, 0] * self.weights_r
-        + previous_encoder_output[:, 1] * self.weights_g
-        + previous_encoder_output[:, 2] * self.weights_b
-    )
-    """
 
 
 class ThreeChannelsCombinatorToThreeChannels(torch.nn.Module):
