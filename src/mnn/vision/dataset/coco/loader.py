@@ -49,9 +49,7 @@ class RawCOCOAnnotationsParser:
 
 
 class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
-    preprocessor = (
-        mnn.vision.dataset.object_detection.preprocessing.ObjectDetectionPreprocessing
-    )
+    preprocessor = mnn.vision.dataset.object_detection.preprocessing.FadedBboxMasks
 
     @abc.abstractmethod
     def get_year(self) -> int:
@@ -157,7 +155,7 @@ class BaseCOCODatasetInstances(BaseCOCODatasetGrouped):
             bboxes.append([x1 / img_w, y1 / img_h, w / img_w, h / img_h])
             categories.append(annotation["category_id"])
 
-        bboxes_as_mask = self.preprocessor.bbox_annotation_to_mask(
+        bboxes_as_mask = self.preprocessor.bboxes_to_mask(
             torch.Tensor(bboxes).float(), torch.Size((img_h, img_w))
         )
         bboxes_as_mask = self.preprocessor.adjust_tensor_dimensions(
