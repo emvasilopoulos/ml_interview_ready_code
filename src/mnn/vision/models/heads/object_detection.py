@@ -72,7 +72,7 @@ class ObjectDetectionOrdinalTransformation:
                     mask[y : y + height, x + width + i],
                 )
 
-            # TODO - Fix Corners
+            # Fix Corners
             for j in range(0, expansion_size):
                 # Top Left Corner
                 y_ij = y - i + j
@@ -179,6 +179,11 @@ class ObjectDetectionOrdinalTransformation:
                     probability,
                     mask[y + height - i, x + 1 : x + width],
                 )
+        return mask
+
+    @staticmethod
+    def fill_rectangle(mask: torch.Tensor, y: int, x: int, height: int, width: int):
+        mask[y : y + height, x : x + width] = 1
         return mask
 
     @staticmethod
