@@ -5,7 +5,7 @@ import mnn.vision.image_size
 import mnn.vision.models.heads.object_detection
 
 
-class ObjectDetectionPreprocessing:
+class FadedBboxMasks:
     @staticmethod
     def resize_image(x: torch.Tensor, new_height: int, new_width: int) -> torch.Tensor:
         x = x.unsqueeze(0)
@@ -70,10 +70,8 @@ class ObjectDetectionPreprocessing:
             height_ratio = x_h / expected_image_height  # less than 1
             if width_ratio > height_ratio:
                 new_height = int(x_h / width_ratio)
-                x = ObjectDetectionPreprocessing.resize_image(
-                    x, new_height, expected_image_width
-                )
-                x = ObjectDetectionPreprocessing.pad_image(
+                x = FadedBboxMasks.resize_image(x, new_height, expected_image_width)
+                x = FadedBboxMasks.pad_image(
                     x,
                     pad_dimension=1,
                     expected_dimension_size=expected_image_height,
@@ -81,10 +79,8 @@ class ObjectDetectionPreprocessing:
                 )
             else:
                 new_width = int(x_w / height_ratio)
-                x = ObjectDetectionPreprocessing.resize_image(
-                    x, expected_image_height, new_width
-                )
-                x = ObjectDetectionPreprocessing.pad_image(
+                x = FadedBboxMasks.resize_image(x, expected_image_height, new_width)
+                x = FadedBboxMasks.pad_image(
                     x,
                     pad_dimension=2,
                     expected_dimension_size=expected_image_width,
@@ -95,10 +91,8 @@ class ObjectDetectionPreprocessing:
             keep_ratio = x_w / x_h
             new_height = expected_image_height
             new_width = int(new_height * keep_ratio)
-            x = ObjectDetectionPreprocessing.resize_image(
-                x, expected_image_height, new_width
-            )
-            x = ObjectDetectionPreprocessing.pad_image(
+            x = FadedBboxMasks.resize_image(x, expected_image_height, new_width)
+            x = FadedBboxMasks.pad_image(
                 x,
                 pad_dimension=2,
                 expected_dimension_size=expected_image_width,
@@ -108,10 +102,8 @@ class ObjectDetectionPreprocessing:
             keep_ratio = x_w / x_h
             new_width = expected_image_width
             new_height = int(new_width / keep_ratio)
-            x = ObjectDetectionPreprocessing.resize_image(
-                x, new_height, expected_image_width
-            )
-            x = ObjectDetectionPreprocessing.pad_image(
+            x = FadedBboxMasks.resize_image(x, new_height, expected_image_width)
+            x = FadedBboxMasks.pad_image(
                 x,
                 pad_dimension=1,
                 expected_dimension_size=expected_image_height,
@@ -123,10 +115,8 @@ class ObjectDetectionPreprocessing:
             if width_ratio > height_ratio:
                 # Resize width first, because this will cause the height to change less
                 new_height = int(x_h / width_ratio)
-                x = ObjectDetectionPreprocessing.resize_image(
-                    x, new_height, expected_image_width
-                )
-                x = ObjectDetectionPreprocessing.pad_image(
+                x = FadedBboxMasks.resize_image(x, new_height, expected_image_width)
+                x = FadedBboxMasks.pad_image(
                     x,
                     pad_dimension=1,
                     expected_dimension_size=expected_image_height,
@@ -134,10 +124,8 @@ class ObjectDetectionPreprocessing:
                 )
             else:
                 new_width = int(x_w / height_ratio)
-                x = ObjectDetectionPreprocessing.resize_image(
-                    x, expected_image_height, new_width
-                )
-                x = ObjectDetectionPreprocessing.pad_image(
+                x = FadedBboxMasks.resize_image(x, expected_image_height, new_width)
+                x = FadedBboxMasks.pad_image(
                     x,
                     pad_dimension=2,
                     expected_dimension_size=expected_image_width,
@@ -167,20 +155,29 @@ class ObjectDetectionPreprocessing:
         Expecting tensors of shape (-1, H, W)
         """
         # 1 - Normalization
-        x = ObjectDetectionPreprocessing.normalize_image(x)
-        x = ObjectDetectionPreprocessing.adjust_tensor_dimensions(
+        x = FadedBboxMasks.normalize_image(x)
+        x = FadedBboxMasks.adjust_tensor_dimensions(
             x, expected_image_size, padding_percent=padding_percent
         )
         return x
 
     @staticmethod
-    def bbox_annotation_to_mask(
-        y: torch.Tensor, mask_shape: torch.Size
-    ) -> torch.Tensor:
+    def bboxes_to_mask(y: torch.Tensor, mask_shape: torch.Size) -> torch.Tensor:
         mask = mnn.vision.models.heads.object_detection.ObjectDetectionOrdinalTransformation.transform_ground_truth_from_normalized_rectangles(
             mask_shape, y
         )
         return mask
+
+    @staticmethod
+    def bboxes_to_masks(y: torch.Tensor, mask_shape: torch.Size) -> torch.Tensor:
+        return torch.stack(
+            [
+                mnn.vision.models.heads.object_detection.ObjectDetectionOrdinalTransformation.transform_ground_truth_from_normalized_rectangles(
+                    mask_shape, y_i.unsqueeze(0)
+                )
+                for y_i in y
+            ]
+        )
 
     @staticmethod
     def cv2_image_to_tensor(x: np.ndarray) -> torch.Tensor:
@@ -207,6 +204,4 @@ if __name__ == "__main__":
     ]
     for expected_image_size in im_sizes:
         for image_RGB in image_RGBs:
-            new_image = ObjectDetectionPreprocessing.preprocess_image(
-                image_RGB, expected_image_size
-            )
+            new_image = FadedBboxMasks.preprocess_image(image_RGB, expected_image_size)
