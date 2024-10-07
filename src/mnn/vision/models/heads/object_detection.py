@@ -46,7 +46,7 @@ class ObjectDetectionOrdinalTransformation:
         """
         expansion_size = ObjectDetectionOrdinalTransformation.OUTTER_EXPANSION
         for i in range(0, expansion_size):
-            probability = (expansion_size - i / expansion_size) / expansion_size
+            probability = 1 - i / expansion_size
             if y - i >= 0:
                 mask[y - i, x : x + width] = torch.where(
                     mask[y - i, x : x + width] < probability,
@@ -154,7 +154,7 @@ class ObjectDetectionOrdinalTransformation:
         """
         inner_expansion = ObjectDetectionOrdinalTransformation.INNER_EXPANSION
         for i in range(1, inner_expansion):
-            probability = (inner_expansion - i / inner_expansion) / inner_expansion
+            probability = 1 - i / inner_expansion
             if x + i < mask.shape[1]:
                 mask[y + 1 : y + height, x + i] = torch.where(
                     mask[y + 1 : y + height, x + i] < probability,
