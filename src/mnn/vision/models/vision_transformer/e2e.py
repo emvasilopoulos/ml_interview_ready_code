@@ -11,7 +11,6 @@ from mnn.vision.models.vision_transformer.encoder.vit_encoder_combinators import
     ThreeChannelsCombinatorToThreeChannels,
     ThreeChannelsCombinator,
 )
-import mnn.vision.models.vision_transformer.positional_encoders.sinusoidal as mnn_sinusoidal_positional_encoders
 import mnn.vision.models.vision_transformer.encoder.utils as mnn_encoder_utils
 
 
