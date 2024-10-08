@@ -16,9 +16,8 @@ import mnn.vision.image_size
 
 class RawCOCOAnnotationsParser:
 
-    def __init__(self, annotations_path: pathlib.Path, split: str):
+    def __init__(self, annotations_path: pathlib.Path):
         self.annotations_path = annotations_path
-        self.split = split
         self.objects_by_image_id: Dict[str, List[Any]] = {}
         self.data_to_store = {}
 
