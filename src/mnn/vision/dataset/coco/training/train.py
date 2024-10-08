@@ -25,10 +25,9 @@ def train_val(
     io_transform: BaseIOTransform = None,
     prediction_transform: BaseIOTransform = None,
     log_rate: int = 50,
+    save_dir: pathlib.Path = pathlib.Path("trained_models"),
 ):
 
-    print(f"---------- MODEL ARCHITECTURE ------------")
-    print(object_detection_model)
     print(
         f"Created model with {count_parameters(object_detection_model) / (10 ** 6)} million parameters"
     )
@@ -75,7 +74,9 @@ def train_val(
 
     # TensorBoard writer
     print("- Open tensorboard with:\ntensorboard --logdir=runs")
-    model_name = f"{experiment}_object_detection.pth"
+    if not save_dir.exists():
+        save_dir.mkdir(parents=True)
+    model_save_path = save_dir / f"{experiment}_object_detection.pth"
     for epoch in range(hyperparameters_config.epochs):
         print(f"---------- EPOCH-{epoch} ------------")
         train_one_epoch(
@@ -91,9 +92,9 @@ def train_val(
             validation_image_path=validation_image_path,
             writer=writer,
             log_rate=log_rate,
-            model_name=model_name,
+            model_save_path=model_save_path,
         )
-
+        torch.save(object_detection_model.state_dict(), model_save_path)
         val_once(
             val_loader,
             object_detection_model,
