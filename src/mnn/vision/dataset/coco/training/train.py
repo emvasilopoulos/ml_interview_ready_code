@@ -75,6 +75,7 @@ def train_val(
 
     # TensorBoard writer
     print("- Open tensorboard with:\ntensorboard --logdir=runs")
+    experiment_name = f"{experiment}_object_detection.pth"
     for epoch in range(hyperparameters_config.epochs):
         print(f"---------- EPOCH-{epoch} ------------")
         train_one_epoch(
@@ -90,10 +91,9 @@ def train_val(
             validation_image_path=validation_image_path,
             writer=writer,
             log_rate=log_rate,
+            model_name=experiment_name,
         )
-        torch.save(
-            object_detection_model.state_dict(), f"{experiment}_object_detection.pth"
-        )
+
         val_once(
             val_loader,
             object_detection_model,
