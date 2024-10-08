@@ -24,7 +24,7 @@ def train_one_epoch(
     validation_image_path: pathlib.Path = None,
     writer: torch.utils.tensorboard.SummaryWriter = None,
     log_rate: int = 1000,
-    model_name: str = "my_vit_object_detection.pth",
+    model_save_path: pathlib.Path = pathlib.Path("my_vit_object_detection.pth"),
 ) -> None:
     """
     RTX A2000 - i5 7th Gen - 8GB RAM
@@ -124,7 +124,7 @@ def train_one_epoch(
         running_iou_05 += current_iou_05
         running_iou_075 += current_iou_075
         if i % log_rate == 0:
-            torch.save(model.state_dict(), model_name)
+            torch.save(model.state_dict(), model_save_path)
             with open("model_steps_till_now.txt", "w") as f:
                 f.write(
                     f"Trained till step: {training_step} | Total steps per epoch: {len(train_loader)}"
