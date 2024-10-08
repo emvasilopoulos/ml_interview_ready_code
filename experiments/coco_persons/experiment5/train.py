@@ -1,60 +1,54 @@
 import torch
-from torch.utils.tensorboard import SummaryWriter
+import torchvision.transforms.functional
 
 import mnn.vision.image_size
 from mnn.vision.models.vision_transformer.e2e import MyVisionTransformer
+from mnn.vision.models.vision_transformer.tasks.object_detection import (
+    ObjectDetectionOrdinalHead,
+)
 import mnn.vision.dataset.utilities
 import mnn.vision.models.heads.object_detection
 import mnn.vision.dataset.coco.loader
 
 
 from mnn.vision.dataset.coco.training.utils import *
-from mnn.vision.dataset.coco.training.session import train_one_epoch, val_once
+
+
+class IOTransform(BaseIOTransform):
+
+    current_angle: int = 0
+
+    def transform_input(self, batch: torch.Tensor) -> torch.Tensor:
+        return torchvision.transforms.functional.rotate(batch, self.current_angle)
+
+    def transform_output(self, batch: torch.Tensor) -> torch.Tensor:
+        return torchvision.transforms.functional.rotate(batch, -self.current_angle)
+
+    def update_transform_configuration(self) -> None:
+        self.current_angle = random.randint(0, 359)
 
 
 class VitObjectDetectionNetwork(torch.nn.Module):
 
-    def __init__(self, model_config: mnn_encoder_config.MyBackboneVitConfiguration):
+    def __init__(
+        self,
+        model_config: mnn_encoder_config.MyBackboneVitConfiguration,
+        head_config: mnn_encoder_config.VisionTransformerEncoderConfiguration,
+    ):
         super().__init__()
-        expected_image_width = model_config.rgb_combinator_config.d_model
-        expected_image_height = (
-            model_config.rgb_combinator_config.feed_forward_dimensions
-        )
+        expected_image_width = model_config.encoder_config.d_model
+        expected_image_height = model_config.encoder_config.feed_forward_dimensions
         self.expected_image_size = mnn.vision.image_size.ImageSize(
             width=expected_image_width, height=expected_image_height
         )
         self.encoder = MyVisionTransformer(model_config, image_size)
+        self.head = ObjectDetectionOrdinalHead(config=head_config)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return self.encoder(x)
-
-
-class FocalLoss(torch.nn.Module):
-
-    def __init__(self, alpha=0.25, gamma=2):
-        super(FocalLoss, self).__init__()
-        self.alpha = alpha
-        self.gamma = gamma
-        self.reduce = "mean"
-
-    def forward(self, inputs, targets):
-        p = torch.sigmoid(inputs)
-        ce_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-            inputs, targets, reduction="none"
-        )
-        p_t = p * targets + (1 - p) * (1 - targets)
-        loss = ce_loss * ((1 - p_t) ** self.gamma)
-
-        if self.reduce == "sum":
-            return torch.sum(loss)
-        elif self.reduce == "mean":
-            return torch.mean(loss)
-        elif self.reduce == "none":
-            return loss
-        else:
-            raise ValueError(
-                "The value of the reduce parameter should be either 'sum', 'mean' or 'none'"
-            )
+        x = self.encoder(x)
+        x = torchvision.transforms.functional.rotate(x, 90)
+        x = self.head(x.view((x.shape[0], x.shape[2], x.shape[1])))  # swap h,w
+        return x.view((x.shape[0], x.shape[2], x.shape[1]))  # reswap h,w
 
 
 if __name__ == "__main__":
@@ -79,12 +73,14 @@ if __name__ == "__main__":
     hidden_dim = embedding_size
     image_RGB = torch.rand(batch_size, 3, image_size.height, image_size.width) * 255
 
-    object_detection_model = VitObjectDetectionNetwork(model_config=model_config)
+    object_detection_model = VitObjectDetectionNetwork(
+        model_config=model_config, head_config=head_config
+    )
 
     print(f"---------- MODEL ARCHITECTURE ------------")
     print(object_detection_model)
     print(
-        f"Created model with {count_parameters(object_detection_model) / (10 ** 6)} million parameters"
+        f"Created model with {count_parameters(object_detection_model) / (10 ** 6)} Mega parameters"
     )
     if torch.cuda.is_available():
         device = torch.device("cuda:0")
@@ -128,11 +124,8 @@ if __name__ == "__main__":
     optimizer = torch.optim.AdamW(
         object_detection_model.parameters(), lr=hyperparameters_config.learning_rate
     )
-    loss_fn = FocalLoss()
-
-    # TensorBoard writer
-    writer = SummaryWriter(log_dir="runs/experiment7_coco_my_vit_normed_predictions")
-    print("- Open tensorboard with:\ntensorboard --logdir=runs")
+    # loss_fn = torch.nn.BCELoss() # This didn't work
+    loss_fn = torch.nn.BCEWithLogitsLoss()
     for epoch in range(hyperparameters_config.epochs):
         print(f"---------- EPOCH-{epoch} ------------")
         train_one_epoch(
@@ -142,23 +135,11 @@ if __name__ == "__main__":
             loss_fn,
             hyperparameters_config,
             epoch,
-            io_transform=None,
-            prediction_transform=None,
+            io_transform=IOTransform(),
             device=device,
             validation_image_path=validation_image_path,
-            writer=writer,
-            log_rate=50,
         )
-        torch.save(object_detection_model.state_dict(), "exp7_object_detection.pth")
+        torch.save(object_detection_model.state_dict(), "exp3_object_detection.pth")
         val_once(
-            val_loader,
-            object_detection_model,
-            loss_fn,
-            hyperparameters_config,
-            epoch,
-            io_transform=None,
-            prediction_transform=None,
-            device=device,
-            writer=writer,
-            log_rate=50,
+            val_loader, object_detection_model, loss_fn, hyperparameters_config, device
         )
