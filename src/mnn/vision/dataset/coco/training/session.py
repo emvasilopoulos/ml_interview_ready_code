@@ -1,6 +1,7 @@
 import torch
 import pathlib
 
+import tqdm
 import torch
 import torch.utils.tensorboard
 
@@ -45,7 +46,8 @@ def train_one_epoch(
     ).to(device, dtype=hyperparameters_config.floating_point_precision)
 
     val_counter = 0
-    for i, (image_batch, target0) in enumerate(train_loader):
+    tqdm_obj = tqdm.tqdm(train_loader, desc="Training | Loss: 0 | IoU-0.25: 0")
+    for i, (image_batch, target0) in enumerate(tqdm_obj):
         image_batch = image_batch.to(
             device=device,
             dtype=hyperparameters_config.floating_point_precision,
@@ -95,6 +97,9 @@ def train_one_epoch(
             mnn_metrics.calculate_iou_batch(output, target0, threshold=0.75)
             .mean()
             .item()
+        )
+        tqdm_obj.set_description(
+            f"Training | Loss: {current_loss:.4f} | IoU-0.25: {current_iou_025:.4f}"
         )
         if writer is not None:
             writer.add_scalar(
@@ -159,7 +164,8 @@ def val_once(
         running_iou_025 = 0
         running_iou_05 = 0
         running_iou_075 = 0
-        for i, (image_batch, target0) in enumerate(val_loader):
+        tqdm_obj = tqdm.tqdm(val_loader, desc="Validation | Loss: 0 | IoU-0.25: 0")
+        for i, (image_batch, target0) in enumerate(tqdm_obj):
             image_batch = image_batch.to(
                 device=device,
                 dtype=hyperparameters_config.floating_point_precision,
@@ -200,6 +206,9 @@ def val_once(
                 .item()
             )
             validation_step = i + current_epoch * len(val_loader)
+            tqdm_obj.set_description(
+                f"Validation | Loss: {current_loss:.4f} | IoU-0.25: {current_iou_025:.4f}"
+            )
             if writer is not None:
                 writer.add_scalar(
                     "IoU_0.25/val",
