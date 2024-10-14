@@ -86,25 +86,22 @@ def prepare_validation_image(
     return val_img_tensor.unsqueeze(0)
 
 
-def write_validation_image_with_predicted_mask(
+def write_image_with_mask(
     temp_out: torch.Tensor,
     validation_image: torch.Tensor,
-    id_: str,
-    threshold: int = 127,  # allows values above 50%
+    sub_dir: str = "any",
 ):
     validation_img = validation_image.squeeze(0).detach().cpu()
     validation_img = validation_img.permute(1, 2, 0)
     temp_out = temp_out.squeeze(0).detach().cpu()
 
     image = (validation_img.numpy() * 255).astype("uint8")
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
     # reverse mask
     raw_mask = (temp_out.numpy() * 255).astype("uint8")
-    ret, mask = cv2.threshold(raw_mask, threshold, 255, cv2.THRESH_BINARY)
-    mask = cv2.bitwise_not(mask)
-    masked_image = cv2.bitwise_and(image, image, mask=mask)
-
-    os.makedirs("validation_images", exist_ok=True)
-    # cv2.imwrite(f"validation_images/image_{id_}.jpg", image)
-    cv2.imwrite(f"validation_images/mask_{id_}.jpg", mask)
-    cv2.imwrite(f"validation_images/validation_image_{id_}.jpg", masked_image)
+    mask = cv2.cvtColor(raw_mask, cv2.COLOR_GRAY2BGR)
+    masked_image = cv2.addWeighted(image, 1, mask, 0.7, 0)
+    os.makedirs(f"assessment_images/{sub_dir}", exist_ok=True)
+    cv2.imwrite(f"assessment_images/{sub_dir}/raw_mask.jpg", raw_mask)
+    cv2.imwrite(f"assessment_images/{sub_dir}/masked_image.jpg", masked_image)
