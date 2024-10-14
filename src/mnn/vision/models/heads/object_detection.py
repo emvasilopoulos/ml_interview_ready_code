@@ -2,7 +2,6 @@ from typing import List
 import dataclasses
 
 import torch
-import mnn.vision.dataset.word_detection.bounding_client_rect as bounding_client_rect
 from mnn.vision.models.vision_transformer.encoder.vit_encoder import (
     RawVisionTransformerMultiChannelEncoder,
 )
@@ -31,8 +30,8 @@ class ObjectDetectionOrdinalTransformation:
     It's worth trying focal loss as well.
     """
 
-    INNER_EXPANSION = 10  # in pixels
-    OUTTER_EXPANSION = 10  # in pixels
+    INNER_EXPANSION = 4  # in pixels
+    OUTTER_EXPANSION = 4  # in pixels
     # outter_expansion <= inner_expansion ALWAYS,
     # otherwise when two rectangles are close to each other
     # the mask will be ruined
