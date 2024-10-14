@@ -98,9 +98,7 @@ if __name__ == "__main__":
         validation_image_path, object_detection_model.expected_image_size
     ).to(device, dtype=hyperparameters_config.floating_point_precision)
     temp_out = object_detection_model(validation_image)
-    write_validation_image_with_predicted_mask(
-        temp_out, validation_image, f"epoch_{0}_id_test"
-    )
+    write_image_with_mask(temp_out, validation_image, f"epoch_{0}_id_test")
 
     dataset_dir = pathlib.Path(
         "/home/emvasilopoulos/projects/ml_interview_ready_code/data/coco/"

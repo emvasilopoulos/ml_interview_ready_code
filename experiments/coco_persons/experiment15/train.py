@@ -1,16 +1,17 @@
+from typing import Callable
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
+import mnn.vision.dataset.coco.training.transform as coco_train_transform
 import mnn.vision.image_size
 import mnn.vision.dataset.coco.training.train as coco_train
 import mnn.vision.dataset.utilities
 import mnn.vision.dataset.coco.loader
-from mnn.vision.dataset.coco.training.transform import BaseIOTransform
 from mnn.vision.models.vision_transformer.e2e import RGBCombinator
 from mnn.vision.models.vision_transformer.encoder.vit_encoder import (
     RawVisionTransformerRGBEncoder,
 )
-import mnn.vision.models.heads.object_detection
+import mnn.vision.models.heads.object_detection as mnn_object_detection
 import mnn.vision.models.vision_transformer.encoder.utils as mnn_encoder_utils
 
 
@@ -65,53 +66,20 @@ class VitObjectDetectionNetwork(torch.nn.Module):
             model_config.encoder_config.d_model, eps=layer_norm_eps, bias=bias
         )
 
+        self.head_activation = torch.nn.Sigmoid()
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_mean_ch = x.mean(dim=1)
         x0 = self.rgb_combinator(x)
         x_ = self.layer_norm0(x0 + x_mean_ch)  # Residual
-        # print(f"Layer norm-0: {x_.min()}, {x_.max()}")
 
-        x1 = self.hidden_transformer0(x0)
-        x_ = self.layer_norm1(x1 + x_ + x_mean_ch)  # Residual
-        # print(f"Layer norm-1: {x_.min()}, {x_.max()}")
+        x1 = self.hidden_transformer0(x_)
+        x_ = self.layer_norm1(x_ + x0 + x1)  # Residual
 
-        x2 = self.hidden_transformer1(x1)
-        x_ = self.layer_norm2(x_mean_ch + x0 + x1 + x2)  # Residual
-        # print(f"Layer norm-2: {x_.min()}, {x_.max()}")
+        x2 = self.hidden_transformer1(x_)
+        x_ = self.layer_norm2(x_ + x0 + x1 + x2)  # Residual
 
-        return x_  # possibly return x0, x1, x2
-
-
-class IOTransform(BaseIOTransform):
-    LOWEST_FACTOR = 0.5
-    HIGHEST_FACTOR = 1.0
-    INCREMENT_FREQUENCY = 100  # in steps
-
-    step_counter = 0
-    scale_factor = 0.5
-    scale_factor_incremental_step = 0.02
-
-    def transform_input(self, batch: torch.Tensor) -> torch.Tensor:
-        return batch
-
-    def transform_output(self, batch: torch.Tensor) -> torch.Tensor:
-        if self.scale_factor < 1.0:
-            batch = batch.unsqueeze(1)
-            batch = torch.nn.functional.interpolate(
-                batch,
-                scale_factor=self.scale_factor,
-                mode="bilinear",
-                align_corners=False,
-            )
-            batch = batch.squeeze(1)
-        return batch
-
-    def update_transform_configuration(self):
-        self.step_counter += 1
-        if self.step_counter % self.INCREMENT_FREQUENCY == 0:
-            if not (self.LOWEST_FACTOR <= self.scale_factor <= self.HIGHEST_FACTOR):
-                self.scale_factor_incremental_step *= -1
-            self.scale_factor += self.scale_factor_incremental_step
+        return self.head_activation(x_)
 
 
 if __name__ == "__main__":
@@ -134,17 +102,26 @@ if __name__ == "__main__":
         "/home/emvasilopoulos/projects/ml_interview_ready_code/data/coco/"
     )
 
+    # Copied from YOLOv5
+    momentum = 0.9
     optimizer = torch.optim.AdamW(
-        object_detection_model.parameters(), lr=hyperparameters_config.learning_rate
+        object_detection_model.parameters(),
+        lr=hyperparameters_config.learning_rate,
+        betas=(momentum, 0.999),
+        weight_decay=0.0,
     )
-    loss_fn = torch.nn.BCEWithLogitsLoss()
+    loss_fn = torch.nn.BCELoss()
 
     # TensorBoard writer
-    experiment = "exp12"
+    experiment = "exp15"
     writer = SummaryWriter(log_dir=f"runs/{experiment}_coco_my_vit_normed_predictions")
     print("- Open tensorboard with:\ntensorboard --logdir=runs")
 
     save_dir = pathlib.Path("trained_models")
+
+    """
+    NO TRANSFORMS THIS TIME
+    """
     coco_train.train_val(
         dataset_dir=dataset_dir,
         object_detection_model=object_detection_model,
@@ -154,8 +131,8 @@ if __name__ == "__main__":
         optimizer=optimizer,
         writer=writer,
         experiment=experiment,
-        io_transform=IOTransform(),
-        prediction_transform=IOTransform(),
-        log_rate=1000,
+        io_transform=None,
+        prediction_transform=None,
+        log_rate=100,
         save_dir=save_dir,
     )

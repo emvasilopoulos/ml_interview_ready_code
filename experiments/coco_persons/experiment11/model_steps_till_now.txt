@@ -1,1 +1,1 @@
-Trained till step: 13000 | Total steps per epoch: 14786
+Trained till step: 14786 | Total steps per epoch: 14786

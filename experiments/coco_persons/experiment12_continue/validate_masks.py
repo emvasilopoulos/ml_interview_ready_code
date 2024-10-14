@@ -1,20 +1,16 @@
 import torch
-from torch.utils.tensorboard import SummaryWriter
 
 import mnn.vision.image_size
-import mnn.vision.dataset.coco.training.train as coco_train
 import mnn.vision.dataset.utilities
+import mnn.vision.models.heads.object_detection
 import mnn.vision.dataset.coco.loader
-from mnn.vision.dataset.coco.training.transform import BaseIOTransform
-from mnn.vision.models.vision_transformer.e2e import RGBCombinator
+from mnn.vision.dataset.coco.training.utils import *
+
+import mnn.vision.models.vision_transformer.encoder.utils as mnn_encoder_utils
 from mnn.vision.models.vision_transformer.encoder.vit_encoder import (
     RawVisionTransformerRGBEncoder,
 )
-import mnn.vision.models.heads.object_detection
-import mnn.vision.models.vision_transformer.encoder.utils as mnn_encoder_utils
-
-
-from mnn.vision.dataset.coco.training.utils import *
+from mnn.vision.models.vision_transformer.e2e import RGBCombinator
 
 
 class VitObjectDetectionNetwork(torch.nn.Module):
@@ -82,38 +78,6 @@ class VitObjectDetectionNetwork(torch.nn.Module):
         return x_  # possibly return x0, x1, x2
 
 
-class IOTransform(BaseIOTransform):
-    LOWEST_FACTOR = 0.5
-    HIGHEST_FACTOR = 1.0
-    INCREMENT_FREQUENCY = 100  # in steps
-
-    step_counter = 0
-    scale_factor = 0.5
-    scale_factor_incremental_step = 0.02
-
-    def transform_input(self, batch: torch.Tensor) -> torch.Tensor:
-        return batch
-
-    def transform_output(self, batch: torch.Tensor) -> torch.Tensor:
-        if self.scale_factor < 1.0:
-            batch = batch.unsqueeze(1)
-            batch = torch.nn.functional.interpolate(
-                batch,
-                scale_factor=self.scale_factor,
-                mode="bilinear",
-                align_corners=False,
-            )
-            batch = batch.squeeze(1)
-        return batch
-
-    def update_transform_configuration(self):
-        self.step_counter += 1
-        if self.step_counter % self.INCREMENT_FREQUENCY == 0:
-            if not (self.LOWEST_FACTOR <= self.scale_factor <= self.HIGHEST_FACTOR):
-                self.scale_factor_incremental_step *= -1
-            self.scale_factor += self.scale_factor_incremental_step
-
-
 if __name__ == "__main__":
 
     model_config, encoder_config, head_config = load_model_config(
@@ -126,36 +90,30 @@ if __name__ == "__main__":
         "/home/emvasilopoulos/projects/ml_interview_ready_code/data/coco/val2017/000000000139.jpg"
     )
 
+    device = torch.device("cuda:0")
     object_detection_model = VitObjectDetectionNetwork(
         model_config=model_config, head_config=head_config
     )
-
-    dataset_dir = pathlib.Path(
-        "/home/emvasilopoulos/projects/ml_interview_ready_code/data/coco/"
+    object_detection_model.to(device=device)
+    object_detection_model.load_state_dict(
+        torch.load("trained_models/exp12_object_detection.pth")
     )
 
-    optimizer = torch.optim.AdamW(
-        object_detection_model.parameters(), lr=hyperparameters_config.learning_rate
-    )
-    loss_fn = torch.nn.BCEWithLogitsLoss()
+    validation_image = prepare_validation_image(
+        validation_image_path, object_detection_model.expected_image_size
+    ).to(device, dtype=hyperparameters_config.floating_point_precision)
 
-    # TensorBoard writer
-    experiment = "exp12"
-    writer = SummaryWriter(log_dir=f"runs/{experiment}_coco_my_vit_normed_predictions")
-    print("- Open tensorboard with:\ntensorboard --logdir=runs")
-
-    save_dir = pathlib.Path("trained_models")
-    coco_train.train_val(
-        dataset_dir=dataset_dir,
-        object_detection_model=object_detection_model,
-        loss_fn=loss_fn,
-        validation_image_path=validation_image_path,
-        hyperparameters_config=hyperparameters_config,
-        optimizer=optimizer,
-        writer=writer,
-        experiment=experiment,
-        io_transform=IOTransform(),
-        prediction_transform=IOTransform(),
-        log_rate=1000,
-        save_dir=save_dir,
-    )
+    with torch.no_grad():
+        temp_out = object_detection_model(validation_image)
+        temp_out = torch.sigmoid(temp_out)
+        d = 20
+        for i in range(1, d):
+            perc = i / d
+            threshold = int(perc * 255)
+            # temp_out = torch.sigmoid(temp_out)
+            write_image_with_mask(
+                temp_out,
+                validation_image,
+                f"test_mask_threshold.{threshold}",
+                threshold,
+            )

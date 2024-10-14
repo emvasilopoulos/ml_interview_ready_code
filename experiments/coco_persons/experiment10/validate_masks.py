@@ -67,7 +67,7 @@ if __name__ == "__main__":
         for i in range(1, 10):
             threshold = int(0.1 * i * 255)
             # temp_out = torch.sigmoid(temp_out)
-            write_validation_image_with_predicted_mask(
+            write_image_with_mask(
                 temp_out,
                 validation_image,
                 f"test_mask_threshold.{threshold}",

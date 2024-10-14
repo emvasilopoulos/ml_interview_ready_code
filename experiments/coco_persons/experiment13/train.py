@@ -137,10 +137,10 @@ if __name__ == "__main__":
     optimizer = torch.optim.AdamW(
         object_detection_model.parameters(), lr=hyperparameters_config.learning_rate
     )
-    loss_fn = torch.nn.BCEWithLogitsLoss()
+    loss_fn = torch.nn.MSELoss()
 
     # TensorBoard writer
-    experiment = "exp12"
+    experiment = "exp13"
     writer = SummaryWriter(log_dir=f"runs/{experiment}_coco_my_vit_normed_predictions")
     print("- Open tensorboard with:\ntensorboard --logdir=runs")
 
@@ -154,8 +154,8 @@ if __name__ == "__main__":
         optimizer=optimizer,
         writer=writer,
         experiment=experiment,
-        io_transform=IOTransform(),
-        prediction_transform=IOTransform(),
-        log_rate=1000,
+        io_transform=None,
+        prediction_transform=None,
+        log_rate=100,
         save_dir=save_dir,
     )
