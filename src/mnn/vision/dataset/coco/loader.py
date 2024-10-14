@@ -2,7 +2,6 @@ import abc
 import random
 from typing import Any, Dict, List, Tuple
 import json
-import os
 import pathlib
 
 import torch
@@ -143,6 +142,9 @@ class BaseCOCODatasetInstances(BaseCOCODatasetGrouped):
         bboxes = []
         categories = []
         img_h, img_w = img.shape[0], img.shape[1]
+
+        # Add whole image as a bounding box
+        bboxes.append([0, 0, 1, 1])
         for annotation in annotations:
             category = int(annotation["category_id"])
             if (
