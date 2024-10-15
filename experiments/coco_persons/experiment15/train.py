@@ -1,8 +1,6 @@
-from typing import Callable
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-import mnn.vision.dataset.coco.training.transform as coco_train_transform
 import mnn.vision.image_size
 import mnn.vision.dataset.coco.training.train as coco_train
 import mnn.vision.dataset.utilities
@@ -11,7 +9,6 @@ from mnn.vision.models.vision_transformer.e2e import RGBCombinator
 from mnn.vision.models.vision_transformer.encoder.vit_encoder import (
     RawVisionTransformerRGBEncoder,
 )
-import mnn.vision.models.heads.object_detection as mnn_object_detection
 import mnn.vision.models.vision_transformer.encoder.utils as mnn_encoder_utils
 
 
