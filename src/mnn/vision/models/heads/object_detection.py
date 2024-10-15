@@ -22,7 +22,11 @@ class VisionTransformerHead(torch.nn.Module):
         pass
 
 
-class ObjectDetectionOrdinalTransformation:
+from warnings import deprecated
+
+
+@deprecated("Use ObjectDetectionOrdinalTransformation instead")
+class ObjectDetectionOrdinalTransformation_LEGACY:
     """
     A class transforming the ground truth data into the training format
     for the object detection head.
@@ -31,7 +35,7 @@ class ObjectDetectionOrdinalTransformation:
     """
 
     INNER_EXPANSION = 4  # in pixels
-    OUTTER_EXPANSION = 4  # in pixels
+    OUTTER_EXPANSION = 0  # in pixels
     # outter_expansion <= inner_expansion ALWAYS,
     # otherwise when two rectangles are close to each other
     # the mask will be ruined
@@ -45,7 +49,7 @@ class ObjectDetectionOrdinalTransformation:
         """
         expansion_size = ObjectDetectionOrdinalTransformation.OUTTER_EXPANSION
         for i in range(0, expansion_size):
-            probability = 1 - i / expansion_size
+            probability = 1 - (i + 1) / expansion_size
             if y - i >= 0:
                 mask[y - i, x : x + width] = torch.where(
                     mask[y - i, x : x + width] < probability,
@@ -152,8 +156,8 @@ class ObjectDetectionOrdinalTransformation:
         Encode the rectangle into the mask.
         """
         inner_expansion = ObjectDetectionOrdinalTransformation.INNER_EXPANSION
-        for i in range(1, inner_expansion):
-            probability = 1 - i / inner_expansion
+        for i in range(0, inner_expansion):
+            probability = 1 - (i + 1) / inner_expansion
             if x + i < mask.shape[1]:
                 mask[y + 1 : y + height, x + i] = torch.where(
                     mask[y + 1 : y + height, x + i] < probability,
@@ -249,6 +253,93 @@ class ObjectDetectionOrdinalTransformation:
         rectangles: torch.Tensor,
     ) -> torch.Tensor:
         raise NotImplementedError("Not implemented yet")
+
+
+class ObjectDetectionOrdinalTransformation:
+    """
+    This version creates a small mask for each rectangle.
+    and then attaches it to the final mask.
+
+    """
+
+    INNER_EXPANSION = 4  # in pixels
+    OUTTER_EXPANSION = 0  # in pixels
+
+    @staticmethod
+    def fill_rectangle(mask: torch.Tensor, y: int, x: int, height: int, width: int):
+        mask[y : y + height, x : x + width] = 1
+        return mask
+
+    @staticmethod
+    def encode_rectangle(mask: torch.Tensor, y: int, x: int, height: int, width: int):
+        # Only inward expansion
+        little_mask = torch.zeros((height, width))
+
+        max_expansion = ObjectDetectionOrdinalTransformation.INNER_EXPANSION
+        if height <= 2 * max_expansion or width <= 2 * max_expansion:
+            # For extra small bboxes
+            max_expansion = min(height, width) // 2
+
+        for i in range(max_expansion):
+            t = i
+            b = height - i
+            l = i
+            r = width - i
+            little_mask[t:b, l] = 1 - i / max_expansion  # Draw left line
+            little_mask[t:b, r - 1] = 1 - i / max_expansion  # Draw right line
+            little_mask[t, l:r] = 1 - i / max_expansion  # Draw top line
+            little_mask[b - 1, l:r] = 1 - i / max_expansion  # Draw bottom line
+
+        mask[y : y + height, x : x + width] = little_mask
+        return mask
+
+    @staticmethod
+    def transform_ground_truth(
+        mask_shape: torch.Size,
+        original_image_shape: torch.Size,
+        rectangles: List[TopLeftWidthHeightRectangle],
+    ) -> torch.Tensor:
+        mask = torch.zeros(mask_shape)  # (H, W)
+
+        for rectangle in rectangles:
+            y_normalized = rectangle.top / original_image_shape[0]
+            x_normalized = rectangle.left / original_image_shape[1]
+            height_normalized = rectangle.height / original_image_shape[0]
+            width_normalized = rectangle.width / original_image_shape[1]
+
+            mask_y = int(y_normalized * mask_shape[0])
+            mask_x = int(x_normalized * mask_shape[1])
+            mask_height = int(height_normalized * mask_shape[0])
+            mask_width = int(width_normalized * mask_shape[1])
+
+            mask = ObjectDetectionOrdinalTransformation.encode_rectangle(
+                mask, mask_y, mask_x, mask_height, mask_width
+            )
+        return mask
+
+    @staticmethod
+    def transform_ground_truth_from_normalized_rectangles(
+        mask_shape: torch.Size,
+        rectangles: torch.Tensor,
+    ) -> torch.Tensor:
+        mask = torch.zeros(mask_shape)  # (H, W)
+
+        for i in range(rectangles.shape[0]):
+            rectangle = rectangles[i]
+            x_normalized = rectangle[0]
+            y_normalized = rectangle[1]
+            width_normalized = rectangle[2]
+            height_normalized = rectangle[3]
+
+            mask_y = int(y_normalized * mask_shape[0])
+            mask_x = int(x_normalized * mask_shape[1])
+            mask_height = int(height_normalized * mask_shape[0])
+            mask_width = int(width_normalized * mask_shape[1])
+
+            mask = ObjectDetectionOrdinalTransformation.encode_rectangle(
+                mask, mask_y, mask_x, mask_height, mask_width
+            )
+        return mask
 
 
 #  Autogenerated - will study later
