@@ -22,11 +22,7 @@ class VisionTransformerHead(torch.nn.Module):
         pass
 
 
-from warnings import deprecated
-
-
-@deprecated("Use ObjectDetectionOrdinalTransformation instead")
-class ObjectDetectionOrdinalTransformation_LEGACY:
+class ObjectDetectionOrdinalTransformation:
     """
     A class transforming the ground truth data into the training format
     for the object detection head.
@@ -34,7 +30,7 @@ class ObjectDetectionOrdinalTransformation_LEGACY:
     It's worth trying focal loss as well.
     """
 
-    INNER_EXPANSION = 4  # in pixels
+    INNER_EXPANSION = 5  # in pixels
     OUTTER_EXPANSION = 0  # in pixels
     # outter_expansion <= inner_expansion ALWAYS,
     # otherwise when two rectangles are close to each other
@@ -48,8 +44,8 @@ class ObjectDetectionOrdinalTransformation_LEGACY:
         Same as 'encode_rectangle' but faster by exploiting PyTorch operations
         """
         expansion_size = ObjectDetectionOrdinalTransformation.OUTTER_EXPANSION
-        for i in range(0, expansion_size):
-            probability = 1 - (i + 1) / expansion_size
+        for i in range(1, expansion_size):
+            probability = round((1 - i / expansion_size) * 100) / 100
             if y - i >= 0:
                 mask[y - i, x : x + width] = torch.where(
                     mask[y - i, x : x + width] < probability,
@@ -156,31 +152,39 @@ class ObjectDetectionOrdinalTransformation_LEGACY:
         Encode the rectangle into the mask.
         """
         inner_expansion = ObjectDetectionOrdinalTransformation.INNER_EXPANSION
-        for i in range(0, inner_expansion):
-            probability = 1 - (i + 1) / inner_expansion
-            if x + i < mask.shape[1]:
-                mask[y + 1 : y + height, x + i] = torch.where(
-                    mask[y + 1 : y + height, x + i] < probability,
+        mask_h, mask_w = mask.shape
+        for i in range(1, inner_expansion):
+            probability = round((1 - i / inner_expansion) * 100) / 100
+            # VERTICAL LINES
+            if x + i < mask_w:
+                y_ = y + height if (y + height) < mask_h else mask_h
+                mask[y:y_, x + i] = torch.where(
+                    mask[y:y_, x + i] < probability,
                     probability,
-                    mask[y + 1 : y + height, x + i],
+                    mask[y:y_, x + i],
                 )
-            if x + width - i >= 0:
-                mask[y + 1 : y + height, x + width - i] = torch.where(
-                    mask[y + 1 : y + height, x + width - i] < probability,
+            if x + width - i >= 0 and x + width - i < mask_w:
+                y_ = y + height if (y + height) < mask_h else mask_h
+                mask[y:y_, x + width - i] = torch.where(
+                    mask[y:y_, x + width - i] < probability,
                     probability,
-                    mask[y + 1 : y + height, x + width - i],
+                    mask[y:y_, x + width - i],
                 )
-            if y + i < mask.shape[0]:
-                mask[y + i, x + 1 : x + width] = torch.where(
-                    mask[y + i, x + 1 : x + width] < probability,
+
+            # HORIZONTAL LINES
+            if y + i < mask_h:
+                x_ = x + width if (x + width) < mask_w else mask_w
+                mask[y + i, x:x_] = torch.where(
+                    mask[y + i, x:x_] < probability,
                     probability,
-                    mask[y + i, x + 1 : x + width],
+                    mask[y + i, x:x_],
                 )
-            if y + height - i >= 0:
-                mask[y + height - i, x + 1 : x + width] = torch.where(
-                    mask[y + height - i, x + 1 : x + width] < probability,
+            if y + height - i >= 0 and y + height - i < mask_h:
+                x_ = x + width if (x + width) < mask_w else mask_w
+                mask[y + height - i, x:x_] = torch.where(
+                    mask[y + height - i, x:x_] < probability,
                     probability,
-                    mask[y + height - i, x + 1 : x + width],
+                    mask[y + height - i, x:x_],
                 )
         return mask
 
@@ -190,7 +194,18 @@ class ObjectDetectionOrdinalTransformation_LEGACY:
         return mask
 
     @staticmethod
+    def draw_rectangle(mask: torch.Tensor, y: int, x: int, height: int, width: int):
+        mask[y : y + height, x] = 1
+        mask[y : y + height, x + width - 1] = 1
+        mask[y, x : x + width] = 1
+        mask[y + height - 1, x : x + width] = 1
+        return mask
+
+    @staticmethod
     def encode_rectangle(mask, y: int, x: int, height: int, width: int):
+        mask = ObjectDetectionOrdinalTransformation.draw_rectangle(
+            mask, y, x, height, width
+        )
         mask = ObjectDetectionOrdinalTransformation.expand_rectangle_inwards(
             mask, y, x, height, width
         )
@@ -255,14 +270,14 @@ class ObjectDetectionOrdinalTransformation_LEGACY:
         raise NotImplementedError("Not implemented yet")
 
 
-class ObjectDetectionOrdinalTransformation:
+class ObjectDetectionOrdinalTransformation_LEGACY:
     """
     This version creates a small mask for each rectangle.
     and then attaches it to the final mask.
 
     """
 
-    INNER_EXPANSION = 4  # in pixels
+    INNER_EXPANSION = 5  # in pixels
     OUTTER_EXPANSION = 0  # in pixels
 
     @staticmethod
@@ -285,11 +300,13 @@ class ObjectDetectionOrdinalTransformation:
             b = height - i
             l = i
             r = width - i
-            little_mask[t:b, l] = 1 - i / max_expansion  # Draw left line
-            little_mask[t:b, r - 1] = 1 - i / max_expansion  # Draw right line
-            little_mask[t, l:r] = 1 - i / max_expansion  # Draw top line
-            little_mask[b - 1, l:r] = 1 - i / max_expansion  # Draw bottom line
 
+            probability = round((1 - i / max_expansion) * 100) / 100
+
+            little_mask[t:b, l] = probability  # Draw left line
+            little_mask[t:b, r - 1] = probability  # Draw right line
+            little_mask[t, l:r] = probability  # Draw top line
+            little_mask[b - 1, l:r] = probability  # Draw bottom line
         mask[y : y + height, x : x + width] = little_mask
         return mask
 
@@ -315,6 +332,7 @@ class ObjectDetectionOrdinalTransformation:
             mask = ObjectDetectionOrdinalTransformation.encode_rectangle(
                 mask, mask_y, mask_x, mask_height, mask_width
             )
+
         return mask
 
     @staticmethod
