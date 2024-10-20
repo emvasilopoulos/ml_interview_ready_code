@@ -85,6 +85,12 @@ class VitObjectDetectionNetwork(torch.nn.Module):
 
 if __name__ == "__main__":
 
+    """
+    NOTE:
+
+    after running 1/3 of the first training epoch the loss starts diverging. This is caused by the threshold module.
+    """
+
     model_config, encoder_config, head_config = load_model_config(
         pathlib.Path("model.yaml")
     )
