@@ -27,11 +27,10 @@ class OpenCvPreprocessor:
 
     @staticmethod
     def bgr_to_rbg(image: np.ndarray) -> np.ndarray:
-        print(image.shape)
         return cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
     @classmethod
-    def to_tensor(cls, image: np.ndarray, device: torch.device) -> torch.tensor:
+    def to_tensor(cls, image: np.ndarray, device: torch.device) -> torch.Tensor:
         image = cls.bgr_to_rbg(image)
         if np.max(image) > 1:
             image = cls.normalize(image)
