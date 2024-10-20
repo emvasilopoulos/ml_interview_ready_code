@@ -45,6 +45,63 @@ class FadedBboxMasks:
         return torch.nn.functional.pad(x, pad_amount_tuple, mode="constant", value=0)
 
     @staticmethod
+    def calculate_new_tensor_dimensions(
+        current_image_size: mnn.vision.image_size.ImageSize,
+        expected_image_size: mnn.vision.image_size.ImageSize,
+    ):
+        x_w = current_image_size.width
+        x_h = current_image_size.height
+        expected_image_width = expected_image_size.width
+        expected_image_height = expected_image_size.height
+        if x_w <= expected_image_width and x_h <= expected_image_height:
+            width_ratio = x_w / expected_image_width  # less than 1
+            height_ratio = x_h / expected_image_height  # less than 1
+            if width_ratio > height_ratio:
+                new_height = int(x_h / width_ratio)
+                resize_height = new_height
+                resize_width = expected_image_width
+                pad_dimension = 1
+                expected_dimension_size = expected_image_height
+            else:
+                new_width = int(x_w / height_ratio)
+                resize_height = expected_image_height
+                resize_width = new_width
+                pad_dimension = 2
+                expected_dimension_size = expected_image_width
+        elif x_w <= expected_image_width and x_h > expected_image_height:
+            keep_ratio = x_w / x_h
+            new_height = expected_image_height
+            new_width = int(new_height * keep_ratio)
+            resize_height = expected_image_height
+            resize_width = new_width
+            pad_dimension = 2
+            expected_dimension_size = expected_image_width
+        elif x_w > expected_image_width and x_h <= expected_image_height:
+            keep_ratio = x_w / x_h
+            new_width = expected_image_width
+            new_height = int(new_width / keep_ratio)
+            resize_height = new_height
+            resize_width = expected_image_width
+            pad_dimension = 1
+            expected_dimension_size = expected_image_height
+        else:
+            width_ratio = x_w / expected_image_width  # greater than 1
+            height_ratio = x_h / expected_image_height  # greater than 1
+            if width_ratio > height_ratio:
+                new_height = int(x_h / width_ratio)
+                resize_height = new_height
+                resize_width = expected_image_width
+                pad_dimension = 1
+                expected_dimension_size = expected_image_height
+            else:
+                new_width = int(x_w / height_ratio)
+                resize_height = expected_image_height
+                resize_width = new_width
+                pad_dimension = 2
+                expected_dimension_size = expected_image_width
+        return (resize_height, resize_width, pad_dimension, expected_dimension_size)
+
+    @staticmethod
     def adjust_tensor_dimensions(
         x: torch.Tensor,
         expected_image_size: mnn.vision.image_size.ImageSize,
@@ -61,80 +118,30 @@ class FadedBboxMasks:
                 f"Expected a 2D tensor or 3D tensor, but got a tensor of shape {x.shape}"
             )
 
-        x_w = x.shape[2]
-        x_h = x.shape[1]
-        expected_image_width = expected_image_size.width
-        expected_image_height = expected_image_size.height
-        if x_w <= expected_image_width and x_h <= expected_image_height:
-            width_ratio = x_w / expected_image_width  # less than 1
-            height_ratio = x_h / expected_image_height  # less than 1
-            if width_ratio > height_ratio:
-                new_height = int(x_h / width_ratio)
-                x = FadedBboxMasks.resize_image(x, new_height, expected_image_width)
-                x = FadedBboxMasks.pad_image(
-                    x,
-                    pad_dimension=1,
-                    expected_dimension_size=expected_image_height,
-                    padding_percent=padding_percent,
-                )
-            else:
-                new_width = int(x_w / height_ratio)
-                x = FadedBboxMasks.resize_image(x, expected_image_height, new_width)
-                x = FadedBboxMasks.pad_image(
-                    x,
-                    pad_dimension=2,
-                    expected_dimension_size=expected_image_width,
-                    padding_percent=padding_percent,
-                )
+        current_image_size = mnn.vision.image_size.ImageSize(x.shape[2], x.shape[1])
+        (
+            resize_height,
+            resize_width,
+            pad_dimension,
+            expected_dimension_size_after_pad,
+        ) = FadedBboxMasks.calculate_new_tensor_dimensions(
+            current_image_size, expected_image_size
+        )
 
-        elif x_w <= expected_image_width and x_h > expected_image_height:
-            keep_ratio = x_w / x_h
-            new_height = expected_image_height
-            new_width = int(new_height * keep_ratio)
-            x = FadedBboxMasks.resize_image(x, expected_image_height, new_width)
-            x = FadedBboxMasks.pad_image(
-                x,
-                pad_dimension=2,
-                expected_dimension_size=expected_image_width,
-                padding_percent=padding_percent,
-            )
-        elif x_w > expected_image_width and x_h <= expected_image_height:
-            keep_ratio = x_w / x_h
-            new_width = expected_image_width
-            new_height = int(new_width / keep_ratio)
-            x = FadedBboxMasks.resize_image(x, new_height, expected_image_width)
-            x = FadedBboxMasks.pad_image(
-                x,
-                pad_dimension=1,
-                expected_dimension_size=expected_image_height,
-                padding_percent=padding_percent,
-            )
-        else:
-            width_ratio = x_w / expected_image_width  # greater than 1
-            height_ratio = x_h / expected_image_height  # greater than 1
-            if width_ratio > height_ratio:
-                # Resize width first, because this will cause the height to change less
-                new_height = int(x_h / width_ratio)
-                x = FadedBboxMasks.resize_image(x, new_height, expected_image_width)
-                x = FadedBboxMasks.pad_image(
-                    x,
-                    pad_dimension=1,
-                    expected_dimension_size=expected_image_height,
-                    padding_percent=padding_percent,
-                )
-            else:
-                new_width = int(x_w / height_ratio)
-                x = FadedBboxMasks.resize_image(x, expected_image_height, new_width)
-                x = FadedBboxMasks.pad_image(
-                    x,
-                    pad_dimension=2,
-                    expected_dimension_size=expected_image_width,
-                    padding_percent=padding_percent,
-                )
+        x = FadedBboxMasks.resize_image(x, resize_height, resize_width)
+        x = FadedBboxMasks.pad_image(
+            x,
+            pad_dimension=pad_dimension,
+            expected_dimension_size=expected_dimension_size_after_pad,
+            padding_percent=padding_percent,
+        )
 
-        if x.shape[1] != expected_image_height or x.shape[2] != expected_image_width:
+        if (
+            x.shape[1] != expected_image_size.height
+            or x.shape[2] != expected_image_size.width
+        ):
             raise ValueError(
-                f"The image was not resized correctly. Initial shape: {initial_shape} New shape: {x.shape} | Expected shape: ({expected_image_height}, {expected_image_width})"
+                f"The image was not resized correctly. Initial shape: {initial_shape} New shape: {x.shape} | Expected shape: ({expected_image_size.height}, { expected_image_size.width})"
             )
 
         if has_expanded_dim:
