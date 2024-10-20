@@ -156,15 +156,27 @@ class BaseCOCODatasetInstances(BaseCOCODatasetGrouped):
             bboxes.append([x1 / img_w, y1 / img_h, w / img_w, h / img_h])
             categories.append(annotation["category_id"])
 
+        current_image_size = mnn.vision.image_size.ImageSize(img_w, img_h)
+        (
+            resize_height,
+            resize_width,
+            pad_dimension,
+            expected_dimension_size_after_pad,
+        ) = self.preprocessor.calculate_new_tensor_dimensions(
+            current_image_size, self.expected_image_size
+        )
+
         bboxes_as_mask = self.preprocessor.bboxes_to_mask(
-            torch.Tensor(bboxes).float(), torch.Size((img_h, img_w))
+            torch.Tensor(bboxes).float(), torch.Size((resize_height, resize_width))
         )
-        bboxes_as_mask = self.preprocessor.adjust_tensor_dimensions(
-            bboxes_as_mask, self.expected_image_size, padding_percent=padding_percent
-        )
+        bboxes_as_mask = self.preprocessor.pad_image(
+            bboxes_as_mask.unsqueeze(0),
+            pad_dimension=pad_dimension,
+            expected_dimension_size=expected_dimension_size_after_pad,
+            padding_percent=padding_percent,
+        ).squeeze(0)
 
         # TODO - support categories somehow
-
         return bboxes_as_mask
 
 
