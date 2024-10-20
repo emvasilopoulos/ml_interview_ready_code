@@ -81,16 +81,16 @@ class VitObjectDetectionNetwork(torch.nn.Module):
 
 if __name__ == "__main__":
     model_config, encoder_config, head_config = load_model_config(
-        pathlib.Path("model.yaml")
+        pathlib.Path("experiment15/model.yaml")
     )
     hyperparameters_config = load_hyperparameters_config(
-        pathlib.Path("hyperparameters.yaml")
+        pathlib.Path("experiment15/hyperparameters.yaml")
     )
     object_detection_model = VitObjectDetectionNetwork(
         model_config=model_config, head_config=head_config
     )
     object_detection_model.load_state_dict(
-        torch.load("trained_models/exp15_object_detection.pth")
+        torch.load("experiment15/trained_models/exp15_object_detection.pth")
     )
     object_detection_model.to(device=torch.device("cuda:0"))
     object_detection_model.eval()
@@ -118,8 +118,6 @@ if __name__ == "__main__":
             out = out.squeeze(0).cpu().numpy()
             raw_mask = (out * 255).astype("uint8")
             mask = cv2.cvtColor(raw_mask, cv2.COLOR_GRAY2BGR)
-            # threshold image
-            mask = cv2.threshold(mask, 10, 255, cv2.THRESH_BINARY)[1]
 
             img = cv2.resize(img, (mask.shape[1], mask.shape[0]))
 
