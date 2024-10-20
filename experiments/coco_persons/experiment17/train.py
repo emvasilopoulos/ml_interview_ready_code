@@ -50,33 +50,37 @@ class VitObjectDetectionNetwork(torch.nn.Module):
             mnn_encoder_utils.get_transformer_encoder_from_config(head_config)
         )
 
-        layer_norm_eps = model_config.encoder_config.layer_norm_config.eps
-        bias = model_config.encoder_config.layer_norm_config.bias
+        layer_norm_eps = model_config.rgb_combinator_config.layer_norm_config.eps
+        bias = model_config.rgb_combinator_config.layer_norm_config.bias
         self.layer_norm0 = torch.nn.LayerNorm(
-            model_config.encoder_config.d_model, eps=layer_norm_eps, bias=bias
+            model_config.rgb_combinator_config.d_model, eps=layer_norm_eps, bias=bias
         )
         self.layer_norm1 = torch.nn.LayerNorm(
-            model_config.encoder_config.d_model, eps=layer_norm_eps, bias=bias
+            model_config.rgb_combinator_config.d_model, eps=layer_norm_eps, bias=bias
         )
 
         self.layer_norm2 = torch.nn.LayerNorm(
-            model_config.encoder_config.d_model, eps=layer_norm_eps, bias=bias
+            model_config.rgb_combinator_config.d_model, eps=layer_norm_eps, bias=bias
         )
 
         self.head_activation = torch.nn.Sigmoid()
+        self.threshold = torch.nn.Threshold(
+            0.25, 0
+        )  # because the mask creator adds values 0.25, 0.5, 0.75, 1
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_mean_ch = x.mean(dim=1)
         x0 = self.rgb_combinator(x)
         x_ = self.layer_norm0(x0 + x_mean_ch)  # Residual
 
-        x1 = self.hidden_transformer0(x_)
+        x1 = self.hidden_transformer0(x_.permute(0, 2, 1))
+        x1 = x1.permute(0, 2, 1)
         x_ = self.layer_norm1(x_ + x0 + x1)  # Residual
 
         x2 = self.hidden_transformer1(x_)
         x_ = self.layer_norm2(x_ + x0 + x1 + x2)  # Residual
 
-        return self.head_activation(x_)
+        return self.threshold(self.head_activation(x_))
 
 
 if __name__ == "__main__":
@@ -94,14 +98,16 @@ if __name__ == "__main__":
     object_detection_model = VitObjectDetectionNetwork(
         model_config=model_config, head_config=head_config
     )
-    object_detection_model.load_state_dict(torch.load("trained_models/exp15_object_detection.pth"))
-    dataset_dir = pathlib.Path(
-        "/home/manos/ml_interview_ready_code/data/"
+    object_detection_model.to(
+        device=torch.device("cuda:0"),
+        dtype=hyperparameters_config.floating_point_precision,
     )
+
+    dataset_dir = pathlib.Path("/home/manos/ml_interview_ready_code/data/")
 
     # Copied from YOLOv5
     momentum = 0.9
-    optimizer = torch.optim.AdamW(
+    optimizer = torch.optim.Adam(
         object_detection_model.parameters(),
         lr=hyperparameters_config.learning_rate,
         betas=(momentum, 0.999),
@@ -110,7 +116,7 @@ if __name__ == "__main__":
     loss_fn = torch.nn.BCELoss()
 
     # TensorBoard writer
-    experiment = "exp15"
+    experiment = "exp17"
     writer = SummaryWriter(log_dir=f"runs/{experiment}_coco_my_vit_normed_predictions")
     print("- Open tensorboard with:\ntensorboard --logdir=runs")
 

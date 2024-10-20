@@ -50,17 +50,17 @@ class VitObjectDetectionNetwork(torch.nn.Module):
             mnn_encoder_utils.get_transformer_encoder_from_config(head_config)
         )
 
-        layer_norm_eps = model_config.encoder_config.layer_norm_config.eps
-        bias = model_config.encoder_config.layer_norm_config.bias
+        layer_norm_eps = model_config.rgb_combinator_config.layer_norm_config.eps
+        bias = model_config.rgb_combinator_config.layer_norm_config.bias
         self.layer_norm0 = torch.nn.LayerNorm(
-            model_config.encoder_config.d_model, eps=layer_norm_eps, bias=bias
+            model_config.rgb_combinator_config.d_model, eps=layer_norm_eps, bias=bias
         )
         self.layer_norm1 = torch.nn.LayerNorm(
-            model_config.encoder_config.d_model, eps=layer_norm_eps, bias=bias
+            model_config.rgb_combinator_config.d_model, eps=layer_norm_eps, bias=bias
         )
 
         self.layer_norm2 = torch.nn.LayerNorm(
-            model_config.encoder_config.d_model, eps=layer_norm_eps, bias=bias
+            model_config.rgb_combinator_config.d_model, eps=layer_norm_eps, bias=bias
         )
 
         self.head_activation = torch.nn.Sigmoid()
@@ -70,7 +70,8 @@ class VitObjectDetectionNetwork(torch.nn.Module):
         x0 = self.rgb_combinator(x)
         x_ = self.layer_norm0(x0 + x_mean_ch)  # Residual
 
-        x1 = self.hidden_transformer0(x_)
+        x1 = self.hidden_transformer0(x_.permute(0, 2, 1))
+        x1 = x1.permute(0, 2, 1)
         x_ = self.layer_norm1(x_ + x0 + x1)  # Residual
 
         x2 = self.hidden_transformer1(x_)
@@ -90,46 +91,57 @@ if __name__ == "__main__":
     validation_image_path = pathlib.Path(
         "/home/manos/ml_interview_ready_code/data/val2017/000000000139.jpg"
     )
-
+    device = torch.device("cuda:0")
     object_detection_model = VitObjectDetectionNetwork(
         model_config=model_config, head_config=head_config
     )
-    object_detection_model.load_state_dict(torch.load("trained_models/exp15_object_detection.pth"))
+    object_detection_model.load_state_dict(torch.load("trained_models/exp16_object_detection_9epochs.pth"))
+    object_detection_model.to(
+        device=device, dtype=hyperparameters_config.floating_point_precision
+    )
+
     dataset_dir = pathlib.Path(
         "/home/manos/ml_interview_ready_code/data/"
     )
-
-    # Copied from YOLOv5
-    momentum = 0.9
-    optimizer = torch.optim.AdamW(
-        object_detection_model.parameters(),
-        lr=hyperparameters_config.learning_rate,
-        betas=(momentum, 0.999),
-        weight_decay=0.0,
+    val_dataset = mnn.vision.dataset.coco.loader.COCODatasetInstances2017(
+        dataset_dir, "val", object_detection_model.expected_image_size, classes=None
     )
+    val_loader = torch.utils.data.DataLoader(
+        val_dataset,
+        batch_size=1,
+    )
+
+    object_detection_model.eval()
     loss_fn = torch.nn.BCELoss()
 
-    # TensorBoard writer
-    experiment = "exp15"
-    writer = SummaryWriter(log_dir=f"runs/{experiment}_coco_my_vit_normed_predictions")
-    print("- Open tensorboard with:\ntensorboard --logdir=runs")
+    os.makedirs("raw_validation", exist_ok=True)
+    with torch.no_grad():
+        for i in range(len(val_dataset)):
+            image_batch, target0 = val_dataset[i]
+            image_batch = image_batch.unsqueeze(0)
+            target0 = target0.unsqueeze(0)
 
-    save_dir = pathlib.Path("trained_models")
+            image_name = val_dataset.images[i]["file_name"]
 
-    """
-    NO TRANSFORMS THIS TIME
-    """
-    coco_train.train_val(
-        dataset_dir=dataset_dir,
-        object_detection_model=object_detection_model,
-        loss_fn=loss_fn,
-        validation_image_path=validation_image_path,
-        hyperparameters_config=hyperparameters_config,
-        optimizer=optimizer,
-        writer=writer,
-        experiment=experiment,
-        io_transform=None,
-        prediction_transform=None,
-        log_rate=100,
-        save_dir=save_dir,
-    )
+            image_batch = image_batch.to(
+                device=device,
+                dtype=hyperparameters_config.floating_point_precision,
+            )
+            target0 = target0.to(
+                device=device,
+                dtype=hyperparameters_config.floating_point_precision,
+            )
+
+            output = object_detection_model(image_batch)
+
+            loss = loss_fn(output, target0)
+            current_loss = loss.item()
+
+            with open(f"raw_validation/{image_name}.txt", "w") as f:
+                f.write(f"Loss: {current_loss}")
+
+            write_image_with_mask(output[0], image_batch[0], f"raw_validation/{image_name}")
+            write_image_with_mask(target0[0], image_batch[0], f"raw_validation/{image_name}_gt")
+
+            if i == 5:
+                break

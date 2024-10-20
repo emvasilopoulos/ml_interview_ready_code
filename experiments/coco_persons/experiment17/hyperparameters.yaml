@@ -1,5 +1,5 @@
-batch_size: 32 
-epochs: 40
-optimizer: adamw
+batch_size: 16
+epochs: 50
+optimizer: adam
 learning_rate: 0.001
 floating_point_precision: float32
