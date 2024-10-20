@@ -35,9 +35,6 @@ def train_val(
     else:
         device = torch.device("cpu")
 
-    object_detection_model.to(
-        device=device, dtype=hyperparameters_config.floating_point_precision
-    )
     validation_image = prepare_validation_image(
         validation_image_path, object_detection_model.expected_image_size
     ).to(device, dtype=hyperparameters_config.floating_point_precision)
@@ -45,7 +42,8 @@ def train_val(
     write_image_with_mask(temp_out, validation_image, "pre-session_prediction")
 
     # See coco["categories"]
-    classes = [1]
+    # classes = [1]
+    classes = None
     train_dataset = mnn.vision.dataset.coco.loader.COCODatasetInstances2017(
         dataset_dir,
         "train",
@@ -74,7 +72,14 @@ def train_val(
     if not save_dir.exists():
         save_dir.mkdir(parents=True)
     model_save_path = save_dir / f"{experiment}_object_detection.pth"
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, "min")
+
+    # Copied from ultralytics
+    lrf = 0.01
+    lf = (
+        lambda x: max(1 - x / hyperparameters_config.epochs, 0) * (1.0 - lrf) + lrf
+    )  # linear
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
+
     for epoch in range(hyperparameters_config.epochs):
         print(f"---------- EPOCH-{epoch} ------------")
         train_one_epoch(
