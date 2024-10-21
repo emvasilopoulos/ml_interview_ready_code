@@ -2,7 +2,7 @@ import torch
 import numpy as np
 from PIL import Image
 
-from mnn.vision.input_process.pil import PILPreprocessor
+from mnn.vision.process_input.pil import PILPreprocessor
 from mnn.vision.models.cnn.vanilla import ExampleNet
 
 

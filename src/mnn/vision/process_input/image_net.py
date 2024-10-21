@@ -2,10 +2,10 @@ import pathlib
 
 import torchvision
 
-import mnn.vision.input_process.base
+import mnn.vision.process_input.base
 
 
-class ImageNetPreprocessor(mnn.vision.input_process.base.BasePreprocessor):
+class ImageNetPreprocessor(mnn.vision.process_input.base.BasePreprocessor):
 
     def __init__(self):
         super().__init__(

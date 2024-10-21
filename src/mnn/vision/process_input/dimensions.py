@@ -2,7 +2,7 @@ import dataclasses
 import torch
 
 import mnn.vision.image_size
-import mnn.vision.input_process.base
+import mnn.vision.process_input.base
 
 
 def resize_image(x: torch.Tensor, new_height: int, new_width: int) -> torch.Tensor:
@@ -62,7 +62,7 @@ class ResizeFixedRatioComponents:
     expected_dimension_size: int
 
 
-class ResizeFixedRatio(mnn.vision.input_process.base.BasePreprocessor):
+class ResizeFixedRatio(mnn.vision.process_input.base.BasePreprocessor):
 
     def calculate_new_tensor_dimensions(
         current_image_size: mnn.vision.image_size.ImageSize,
