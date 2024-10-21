@@ -1,5 +1,0 @@
-includes functionality for:
-1. reading image
-2. normalizing
-3. resize
-4. pad
