@@ -11,6 +11,9 @@ import numpy.typing as npt
 
 import mnn.vision.dataset.object_detection.preprocessing
 import mnn.vision.image_size
+import mnn.vision.process_output
+import mnn.vision.process_output.object_detection
+import mnn.vision.process_output.object_detection.rectangles_to_mask
 
 
 class RawCOCOAnnotationsParser:
@@ -47,7 +50,9 @@ class RawCOCOAnnotationsParser:
 
 
 class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
-    preprocessor = mnn.vision.dataset.object_detection.preprocessing.FadedBboxMasks
+    preprocessor = (
+        mnn.vision.process_output.object_detection.rectangles_to_mask.ObjectDetectionOrdinalTransformation
+    )
 
     @abc.abstractmethod
     def get_year(self) -> int:
