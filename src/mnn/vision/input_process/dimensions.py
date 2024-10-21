@@ -1,10 +1,8 @@
 import dataclasses
-import numpy as np
-import numpy.typing as npt
 import torch
 
 import mnn.vision.image_size
-import mnn.vision.preprocess.base
+import mnn.vision.input_process.base
 
 
 def resize_image(x: torch.Tensor, new_height: int, new_width: int) -> torch.Tensor:
@@ -31,6 +29,9 @@ def pad_image(
 ) -> torch.Tensor:
     if padding_percent < 0 or padding_percent > 1:
         raise ValueError("The padding_percent should be between 0 and 1")
+
+    if x.shape[0] != 3:
+        raise ValueError("The image should have 3 channels")
 
     # Expecting tensors of shape (3, H, W)
     x_dim_size = x.shape[pad_dimension]
@@ -61,7 +62,7 @@ class ResizeFixedRatioComponents:
     expected_dimension_size: int
 
 
-class ResizeFixedRatio(mnn.vision.preprocess.base.BasePreprocessor):
+class ResizeFixedRatio(mnn.vision.input_process.base.BasePreprocessor):
 
     def calculate_new_tensor_dimensions(
         current_image_size: mnn.vision.image_size.ImageSize,
@@ -154,10 +155,3 @@ class ResizeFixedRatio(mnn.vision.preprocess.base.BasePreprocessor):
             pad_value,
         )
         return x
-
-
-class FormatConversion:
-
-    @staticmethod
-    def cv2_image_to_tensor(x: npt.NDArray[np.uint8]) -> torch.Tensor:
-        return torch.from_numpy(x).permute(2, 0, 1).float()
