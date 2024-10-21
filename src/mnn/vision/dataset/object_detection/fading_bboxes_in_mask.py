@@ -5,7 +5,8 @@ import mnn.vision.image_size
 import mnn.vision.process_output.object_detection.rectangles_to_mask
 
 
-class FadedBboxMasks:
+class FadingBboxMasks:
+
     @staticmethod
     def resize_image(x: torch.Tensor, new_height: int, new_width: int) -> torch.Tensor:
         x = x.unsqueeze(0)
@@ -124,12 +125,12 @@ class FadedBboxMasks:
             resize_width,
             pad_dimension,
             expected_dimension_size_after_pad,
-        ) = FadedBboxMasks.calculate_new_tensor_dimensions(
+        ) = FadingBboxMasks.calculate_new_tensor_dimensions(
             current_image_size, expected_image_size
         )
 
-        x = FadedBboxMasks.resize_image(x, resize_height, resize_width)
-        x = FadedBboxMasks.pad_image(
+        x = FadingBboxMasks.resize_image(x, resize_height, resize_width)
+        x = FadingBboxMasks.pad_image(
             x,
             pad_dimension=pad_dimension,
             expected_dimension_size=expected_dimension_size_after_pad,
@@ -162,8 +163,8 @@ class FadedBboxMasks:
         Expecting tensors of shape (-1, H, W)
         """
         # 1 - Normalization
-        x = FadedBboxMasks.normalize_image(x)
-        x = FadedBboxMasks.adjust_tensor_dimensions(
+        x = FadingBboxMasks.normalize_image(x)
+        x = FadingBboxMasks.adjust_tensor_dimensions(
             x, expected_image_size, padding_percent=padding_percent
         )
         return x
@@ -211,4 +212,4 @@ if __name__ == "__main__":
     ]
     for expected_image_size in im_sizes:
         for image_RGB in image_RGBs:
-            new_image = FadedBboxMasks.preprocess_image(image_RGB, expected_image_size)
+            new_image = FadingBboxMasks.preprocess_image(image_RGB, expected_image_size)

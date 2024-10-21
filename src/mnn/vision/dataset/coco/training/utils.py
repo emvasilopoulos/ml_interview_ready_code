@@ -74,7 +74,7 @@ def prepare_validation_image(
 ):
 
     preprocessor = (
-        mnn.vision.dataset.object_detection.fading_bboxes_in_mask.FadedBboxMasks
+        mnn.vision.dataset.object_detection.fading_bboxes_in_mask.FadingBboxMasks
     )
     img = cv2.imread(validation_image_path.as_posix())
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)

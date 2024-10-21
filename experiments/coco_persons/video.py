@@ -96,7 +96,7 @@ if __name__ == "__main__":
     object_detection_model.eval()
 
     preprocessor = (
-        mnn.vision.dataset.object_detection.fading_bboxes_in_mask.FadedBboxMasks
+        mnn.vision.dataset.object_detection.fading_bboxes_in_mask.FadingBboxMasks
     )
 
     cap = cv2.VideoCapture(0)
