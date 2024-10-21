@@ -15,10 +15,8 @@ import mnn.vision.dataset.coco.loader
 
 
 from mnn.vision.dataset.coco.training.utils import *
-from mnn.vision.models.heads.object_detection import (
-    ObjectDetectionOrdinalTransformation,
-    TopLeftWidthHeightRectangle,
-)
+
+from mnn.vision.process_output.object_detection.rectangles_to_mask import *
 
 
 class FocalLoss(torch.nn.Module):
@@ -107,7 +105,7 @@ if __name__ == "__main__":
 
     image_shape = (image_size.height, image_size.width)
     mask = (
-        ObjectDetectionOrdinalTransformation.transform_ground_truth(
+        ObjectDetectionOrdinalTransformation.transform(
             image_shape, image_shape, rectangles
         )
         .unsqueeze(0)

@@ -205,7 +205,7 @@ class ObjectDetectionOrdinalTransformation:
         return mask
 
     @staticmethod
-    def transform_ground_truth(
+    def transform(
         mask_shape: torch.Size,
         original_image_shape: torch.Size,
         rectangles: List[TopLeftWidthHeightRectangle],
@@ -229,7 +229,7 @@ class ObjectDetectionOrdinalTransformation:
         return mask
 
     @staticmethod
-    def transform_ground_truth_from_normalized_rectangles(
+    def transform_from_normalized_rectangles(
         mask_shape: torch.Size,
         rectangles: torch.Tensor,
     ) -> torch.Tensor:
@@ -363,7 +363,7 @@ if __name__ == "__main__":
             TopLeftWidthHeightRectangle(900, 0, 100, 100),
             TopLeftWidthHeightRectangle(900, 900, 100, 100),
         ]
-        mask = ObjectDetectionOrdinalTransformation.transform_ground_truth(
+        mask = ObjectDetectionOrdinalTransformation.transform(
             mask_shape, original_image_shape, rectangles
         )
         mask_as_numpy = mask.numpy()

@@ -2,9 +2,7 @@ from typing import List
 import torch
 
 
-from mnn.vision.models.heads.object_detection import *
-import mnn.vision.dataset.utilities
-import mnn.vision.dataset.coco.loader
+from mnn.vision.process_output.object_detection.rectangles_to_mask import *
 
 
 from mnn.vision.dataset.coco.training.utils import *
@@ -28,7 +26,7 @@ if __name__ == "__main__":
     rectangles: List[TopLeftWidthHeightRectangle] = [
         TopLeftWidthHeightRectangle(105, 105, 200, 200),
     ]
-    mask = ObjectDetectionOrdinalTransformation.transform_ground_truth(
+    mask = ObjectDetectionOrdinalTransformation.transform(
         image_shape, image_shape, rectangles
     ).unsqueeze(0)
     mask = torch.clamp(mask, min=1e-7, max=1 - 1e-7)
@@ -36,7 +34,7 @@ if __name__ == "__main__":
     rectangles: List[TopLeftWidthHeightRectangle] = [
         TopLeftWidthHeightRectangle(100, 100, 200, 200),
     ]
-    mask2 = ObjectDetectionOrdinalTransformation.transform_ground_truth(
+    mask2 = ObjectDetectionOrdinalTransformation.transform(
         image_shape, image_shape, rectangles
     ).unsqueeze(0)
 
