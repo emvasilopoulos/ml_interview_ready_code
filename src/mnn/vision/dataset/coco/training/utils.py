@@ -15,7 +15,7 @@ import torch.utils.tensorboard
 import mnn.vision.image_size
 import mnn.vision.models.vision_transformer.encoder.config as mnn_encoder_config
 import mnn.vision.config as mnn_config
-import mnn.vision.dataset.object_detection.preprocessing
+import mnn.vision.dataset.object_detection.fading_bboxes_in_mask
 import mnn.vision.dataset.coco.training.metrics as mnn_metrics
 
 
@@ -73,7 +73,9 @@ def prepare_validation_image(
     expected_image_size: mnn.vision.image_size.ImageSize,
 ):
 
-    preprocessor = mnn.vision.dataset.object_detection.preprocessing.FadedBboxMasks
+    preprocessor = (
+        mnn.vision.dataset.object_detection.fading_bboxes_in_mask.FadedBboxMasks
+    )
     img = cv2.imread(validation_image_path.as_posix())
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     padding_percent = random.random()

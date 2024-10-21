@@ -2,7 +2,7 @@ import torch
 import numpy as np
 
 import mnn.vision.image_size
-import mnn.vision.models.heads.object_detection
+import mnn.vision.process_output.object_detection.rectangles_to_mask
 
 
 class FadedBboxMasks:
@@ -170,7 +170,7 @@ class FadedBboxMasks:
 
     @staticmethod
     def bboxes_to_mask(y: torch.Tensor, mask_shape: torch.Size) -> torch.Tensor:
-        mask = mnn.vision.models.heads.object_detection.ObjectDetectionOrdinalTransformation.transform_ground_truth_from_normalized_rectangles(
+        mask = mnn.vision.process_output.object_detection.rectangles_to_mask.ObjectDetectionOrdinalTransformation.transform_from_normalized_rectangles(
             mask_shape, y
         )
         return mask
@@ -179,7 +179,7 @@ class FadedBboxMasks:
     def bboxes_to_masks(y: torch.Tensor, mask_shape: torch.Size) -> torch.Tensor:
         return torch.stack(
             [
-                mnn.vision.models.heads.object_detection.ObjectDetectionOrdinalTransformation.transform_ground_truth_from_normalized_rectangles(
+                mnn.vision.process_output.object_detection.rectangles_to_mask.ObjectDetectionOrdinalTransformation.transform_from_normalized_rectangles(
                     mask_shape, y_i.unsqueeze(0)
                 )
                 for y_i in y

@@ -95,7 +95,9 @@ if __name__ == "__main__":
     object_detection_model.to(device=torch.device("cuda:0"))
     object_detection_model.eval()
 
-    preprocessor = mnn.vision.dataset.object_detection.preprocessing.FadedBboxMasks
+    preprocessor = (
+        mnn.vision.dataset.object_detection.fading_bboxes_in_mask.FadedBboxMasks
+    )
 
     cap = cv2.VideoCapture(0)
     with torch.no_grad():

@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import numpy.typing as npt
 
-import mnn.vision.dataset.object_detection.preprocessing
+import mnn.vision.dataset.object_detection.fading_bboxes_in_mask
 import mnn.vision.image_size
 import mnn.vision.process_output
 import mnn.vision.process_output.object_detection
