@@ -1,0 +1,1 @@
+The model architecture processes raw images, i.e. a tensor of shape (B, Ch, H, W)
