@@ -1,17 +1,28 @@
+import pathlib
+import logging
+from typing import Tuple
+
 import torch
-from torch.utils.tensorboard import SummaryWriter
+import torch.utils.tensorboard
 
 
 from mnn.vision.dataset.coco.experiments.detection_fading_bboxes_in_mask import (
     COCOInstances2017FBM,
 )
 from mnn.vision.dataset.coco.training.transform import BaseIOTransform
-from mnn.vision.dataset.coco.training.utils import *
+import mnn.vision.config as mnn_config
+import mnn.vision.dataset.coco.training.utils as mnn_coco_training_utils
 from mnn.vision.dataset.coco.training.session import train_one_epoch, val_once
 from mnn.vision.image_size import ImageSize
 
 
-def default_scheduler(optimizer, epochs):
+LOGGER = logging.getLogger(__name__)
+LOGGER.setLevel(logging.INFO)
+
+
+def default_scheduler(
+    optimizer: torch.optim.Optimizer, epochs: int
+) -> torch.optim.lr_scheduler.LambdaLR:
     # Copied from ultralytics
     lrf = 0.01
     lf = lambda x: max(1 - x / epochs, 0) * (1.0 - lrf) + lrf  # linear
@@ -20,7 +31,7 @@ def default_scheduler(optimizer, epochs):
 
 def default_train_val_datasets(
     dataset_dir: pathlib.Path, expected_image_size: ImageSize
-):
+) -> Tuple[COCOInstances2017FBM, COCOInstances2017FBM]:
     # See coco["categories"]
     classes = None
     train_dataset = COCOInstances2017FBM(
@@ -43,17 +54,16 @@ def train_val(
     optimizer: torch.optim.Optimizer,
     scheduler: torch.optim.lr_scheduler.LRScheduler,
     hyperparameters_config: mnn_config.HyperparametersConfiguration,
-    writer: SummaryWriter,
+    writer: torch.utils.tensorboard.SummaryWriter,
     experiment: str,
+    validation_image_path: pathlib.Path,
     io_transform: BaseIOTransform = None,
-    prediction_transform: BaseIOTransform = None,
     log_rate: int = 50,
     save_dir: pathlib.Path = pathlib.Path("trained_models"),
-    validation_image_path: pathlib.Path = None,
 ):
     # Print model parameters
-    print(
-        f"Created model with {count_parameters(object_detection_model) / (10 ** 6)} million parameters"
+    LOGGER.info(
+        f"Created model with {mnn_coco_training_utils.count_parameters(object_detection_model) / (10 ** 6)} million parameters"
     )
 
     # Set device
@@ -63,11 +73,13 @@ def train_val(
         device = torch.device("cpu")
 
     # Prepare validation image
-    validation_image = prepare_validation_image(
+    validation_image = mnn_coco_training_utils.prepare_validation_image(
         validation_image_path, object_detection_model.expected_image_size
     ).to(device, dtype=hyperparameters_config.floating_point_precision)
     temp_out = object_detection_model(validation_image)
-    write_image_with_mask(temp_out, validation_image, "pre-session_prediction")
+    mnn_coco_training_utils.write_image_with_mask(
+        temp_out, validation_image, "pre-session_prediction"
+    )
 
     # Prepare data loaders
     train_loader = torch.utils.data.DataLoader(
@@ -84,13 +96,13 @@ def train_val(
     )
 
     # TensorBoard writer
-    print("- Open tensorboard with:\ntensorboard --logdir=runs")
+    LOGGER.info("========|> Open tensorboard with:\ntensorboard --logdir=runs")
     if not save_dir.exists():
         save_dir.mkdir(parents=True)
     model_save_path = save_dir / f"{experiment}_object_detection.pth"
 
     for epoch in range(hyperparameters_config.epochs):
-        print(f"---------- EPOCH-{epoch} ------------")
+        LOGGER.info(f"---------- EPOCH-{epoch} ------------")
         train_one_epoch(
             train_loader,
             object_detection_model,
@@ -99,7 +111,6 @@ def train_val(
             hyperparameters_config,
             epoch,
             io_transform=io_transform,
-            prediction_transform=prediction_transform,
             device=device,
             validation_image_path=validation_image_path,
             writer=writer,
