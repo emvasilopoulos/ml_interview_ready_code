@@ -1,3 +1,4 @@
+import time
 from typing import Any, Callable, Tuple
 import torch
 import torch.nn
@@ -71,3 +72,19 @@ def check_model_dtype2(model: torch.nn.Module, dtype: torch.dtype):
 
 def initialize_weights(tensor_shape: torch.Size):
     return torch.rand(tensor_shape)
+
+
+def inference_test(image: torch.Tensor, model: torch.nn.Module):
+    t0 = time.time()
+    output = model(image)
+    if model.device.type == "cuda":
+        torch.cuda.synchronize()
+    t1 = time.time()
+    print("Time taken:", t1 - t0, "seconds")
+    print("Model's output shape:", output.shape)
+    traced_model = torch.jit.trace(model.forward, image, check_trace=True, strict=True)
+    return traced_model
+
+
+def count_parameters(model) -> int:
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)

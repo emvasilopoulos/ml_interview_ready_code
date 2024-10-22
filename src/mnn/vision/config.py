@@ -1,7 +1,9 @@
 import dataclasses
+import pathlib
 
 import torch
 
+import mnn.utils
 from mnn.torch_utils import FLOATING_POINT_PRECISIONS
 
 
@@ -26,3 +28,11 @@ class HyperparametersConfiguration:
                 hyperparameters_configuration["floating_point_precision"]
             ],
         )
+
+
+def load_hyperparameters_config(yaml_path: pathlib.Path):
+    hyperparameters_config_as_dict = mnn.utils.read_yaml_file(yaml_path)
+    hyperparameters_config = HyperparametersConfiguration.from_dict(
+        hyperparameters_config_as_dict
+    )
+    return hyperparameters_config

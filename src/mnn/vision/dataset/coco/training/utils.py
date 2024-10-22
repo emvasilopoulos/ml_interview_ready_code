@@ -1,71 +1,13 @@
-import abc
-import time
-from typing import Tuple
-import yaml
-
-import torch
+import pathlib
 import os
 import random
-import cv2
-import pathlib
 
+import cv2
 import torch
 import torch.utils.tensorboard
 
 import mnn.vision.image_size
-import mnn.vision.models.vision_transformer.encoder.config as mnn_encoder_config
-import mnn.vision.config as mnn_config
 import mnn.vision.dataset.object_detection.fading_bboxes_in_mask
-import mnn.vision.dataset.coco.training.metrics as mnn_metrics
-
-
-def inference_test(image: torch.Tensor, model: torch.nn.Module):
-    t0 = time.time()
-    output = model(image)
-    t1 = time.time()
-    print("Time taken:", t1 - t0, "seconds")
-    print("Model's output shape:", output.shape)
-    traced_model = torch.jit.trace(model.forward, image, check_trace=True, strict=True)
-    return traced_model
-
-
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
-def read_yaml_file(file_path: pathlib.Path) -> dict:
-    with file_path.open(mode="r") as f:
-        # Python 3.11 need Loader
-        return yaml.load(f, Loader=yaml.FullLoader)
-
-
-""" CONFIGURATION """
-
-
-def load_model_config(
-    yaml_path: pathlib.Path,
-) -> Tuple[
-    mnn_encoder_config.MyBackboneVitConfiguration,
-    mnn_encoder_config.VisionTransformerEncoderConfiguration,
-    mnn_encoder_config.VisionTransformerEncoderConfiguration,
-]:
-    model_config_as_dict = read_yaml_file(yaml_path)
-    model_config = mnn_encoder_config.MyBackboneVitConfiguration.from_dict(
-        model_config_as_dict["network"]["backbone"]
-    )
-    encoder_config = model_config.encoder_config
-    head_config = mnn_encoder_config.VisionTransformerEncoderConfiguration.from_dict(
-        model_config_as_dict["network"]["head"]["VisionTransformerHead"]
-    )
-    return model_config, encoder_config, head_config
-
-
-def load_hyperparameters_config(yaml_path: pathlib.Path):
-    hyperparameters_config_as_dict = read_yaml_file(yaml_path)
-    hyperparameters_config = mnn_config.HyperparametersConfiguration.from_dict(
-        hyperparameters_config_as_dict
-    )
-    return hyperparameters_config
 
 
 def prepare_validation_image(
