@@ -1,17 +1,17 @@
 import torch
 import torch.nn
 
-import mnn.vision.models.vision_transformer.encoder.config as mnn_encoder_config
+import mnn.vision.models.vision_transformer.components.encoder.config as mnn_encoder_config
 import mnn.vision.image_size
-from mnn.vision.models.vision_transformer.encoder.vit_encoder import (
+from mnn.vision.models.vision_transformer.components.encoder.raw_vision_encoder import (
     RawVisionTransformerRGBEncoder,
     RawVisionTransformerMultiChannelEncoder,
 )
-from mnn.vision.models.vision_transformer.encoder.vit_encoder_combinators import (
+from mnn.vision.models.vision_transformer.components.encoder.vit_encoder_combinators import (
     ThreeChannelsCombinatorToThreeChannels,
     ThreeChannelsCombinator,
 )
-import mnn.vision.models.vision_transformer.encoder.utils as mnn_encoder_utils
+import mnn.vision.models.vision_transformer.components.encoder.utils as mnn_encoder_utils
 
 
 # Experimental Module

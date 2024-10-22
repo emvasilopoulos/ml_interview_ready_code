@@ -1,5 +1,5 @@
 import torch
-import mnn.vision.models.vision_transformer.encoder.config as mnn_encoder_config
+import mnn.vision.models.vision_transformer.components.encoder.config as mnn_encoder_config
 
 TRANSFORMER_ACTIVATIONS = {
     "relu": torch.nn.ReLU(),

@@ -4,10 +4,10 @@ import mnn.vision.image_size
 import mnn.vision.dataset.utilities
 import mnn.vision.dataset.coco.torch_dataset
 from mnn.vision.models.vision_transformer.e2e import RGBCombinator
-from mnn.vision.models.vision_transformer.encoder.vit_encoder import (
+from mnn.vision.models.vision_transformer.components.encoder.vit_encoder import (
     RawVisionTransformerRGBEncoder,
 )
-import mnn.vision.models.vision_transformer.encoder.utils as mnn_encoder_utils
+import mnn.vision.models.vision_transformer.components.encoder.utils as mnn_encoder_utils
 
 
 from mnn.vision.dataset.coco.training.utils import *

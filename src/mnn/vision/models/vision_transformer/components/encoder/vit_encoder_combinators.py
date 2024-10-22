@@ -1,7 +1,7 @@
 import torch
 import torch.nn
 
-import mnn.vision.models.vision_transformer.encoder.vit_encoder as mnn_vit_encoder
+import mnn.vision.models.vision_transformer.components.encoder.raw_vision_encoder as mnn_vit_encoder
 
 
 class MultiChannelsCombinator(torch.nn.Module):
