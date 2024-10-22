@@ -4,7 +4,7 @@ from torch.utils.tensorboard import SummaryWriter
 import mnn.vision.image_size
 import mnn.vision.dataset.coco.training.train as coco_train
 import mnn.vision.dataset.utilities
-import mnn.vision.dataset.coco.loader
+import mnn.vision.dataset.coco.torch_dataset
 from mnn.vision.models.vision_transformer.e2e import RGBCombinator
 from mnn.vision.models.vision_transformer.encoder.vit_encoder import (
     RawVisionTransformerRGBEncoder,
@@ -95,14 +95,14 @@ if __name__ == "__main__":
     object_detection_model = VitObjectDetectionNetwork(
         model_config=model_config, head_config=head_config
     )
-    object_detection_model.load_state_dict(torch.load("trained_models/exp16_object_detection_9epochs.pth"))
+    object_detection_model.load_state_dict(
+        torch.load("trained_models/exp16_object_detection_9epochs.pth")
+    )
     object_detection_model.to(
         device=device, dtype=hyperparameters_config.floating_point_precision
     )
 
-    dataset_dir = pathlib.Path(
-        "/home/manos/ml_interview_ready_code/data/"
-    )
+    dataset_dir = pathlib.Path("/home/manos/ml_interview_ready_code/data/")
     val_dataset = mnn.vision.dataset.coco.loader.COCODatasetInstances2017(
         dataset_dir, "val", object_detection_model.expected_image_size, classes=None
     )
@@ -140,8 +140,12 @@ if __name__ == "__main__":
             with open(f"raw_validation/{image_name}.txt", "w") as f:
                 f.write(f"Loss: {current_loss}")
 
-            write_image_with_mask(output[0], image_batch[0], f"raw_validation/{image_name}")
-            write_image_with_mask(target0[0], image_batch[0], f"raw_validation/{image_name}_gt")
+            write_image_with_mask(
+                output[0], image_batch[0], f"raw_validation/{image_name}"
+            )
+            write_image_with_mask(
+                target0[0], image_batch[0], f"raw_validation/{image_name}_gt"
+            )
 
             if i == 5:
                 break

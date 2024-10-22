@@ -5,7 +5,7 @@ import functools
 
 from mnn.vision.models.heads.object_detection import *
 import mnn.vision.dataset.utilities
-import mnn.vision.dataset.coco.loader
+import mnn.vision.dataset.coco.torch_dataset
 
 
 from mnn.vision.dataset.coco.training.utils import *
@@ -22,8 +22,10 @@ class CustomBCELoss(torch.nn.Module):
             y_true * torch.log(y_pred) + (1 - y_true) * torch.log(1 - y_pred)
         )
 
+
 def torch_mask_to_cv(mask: torch.Tensor) -> np.ndarray:
     return (mask.detach().cpu().numpy() * 255).astype("uint8")
+
 
 def rect_detection_in_mask(mask: torch.Tensor):
     print("------------------")
@@ -61,9 +63,7 @@ if __name__ == "__main__":
     model.eval()
 
     image_size = model.expected_image_size
-    dataset_dir = pathlib.Path(
-        "/home/manos/ml_interview_ready_code/data"
-    )
+    dataset_dir = pathlib.Path("/home/manos/ml_interview_ready_code/data")
     val_dataset = mnn.vision.dataset.coco.loader.COCODatasetInstances2017(
         dataset_dir, "val", image_size, classes=None
     )

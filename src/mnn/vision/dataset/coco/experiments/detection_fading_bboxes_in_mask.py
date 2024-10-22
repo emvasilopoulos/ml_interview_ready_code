@@ -4,7 +4,7 @@ import torch
 import numpy as np
 import numpy.typing as npt
 
-from mnn.vision.dataset.coco.loader import COCODatasetInstances2017
+from mnn.vision.dataset.coco.torch_dataset import COCODatasetInstances2017
 import mnn.vision.dataset.object_detection.fading_bboxes_in_mask as mnn_fading_bboxes_in_mask
 import mnn.vision.image_size
 import mnn.vision.process_input.format

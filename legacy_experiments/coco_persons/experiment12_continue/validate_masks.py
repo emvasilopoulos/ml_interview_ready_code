@@ -3,7 +3,7 @@ import torch
 import mnn.vision.image_size
 import mnn.vision.dataset.utilities
 import mnn.vision.models.heads.object_detection
-import mnn.vision.dataset.coco.loader
+import mnn.vision.dataset.coco.torch_dataset
 from mnn.vision.dataset.coco.training.utils import *
 
 import mnn.vision.models.vision_transformer.encoder.utils as mnn_encoder_utils

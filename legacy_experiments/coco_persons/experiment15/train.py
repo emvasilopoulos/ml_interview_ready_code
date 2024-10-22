@@ -4,7 +4,7 @@ from torch.utils.tensorboard import SummaryWriter
 import mnn.vision.image_size
 import mnn.vision.dataset.coco.training.train as coco_train
 import mnn.vision.dataset.utilities
-import mnn.vision.dataset.coco.loader
+import mnn.vision.dataset.coco.torch_dataset
 from mnn.vision.models.vision_transformer.e2e import RGBCombinator
 from mnn.vision.models.vision_transformer.encoder.vit_encoder import (
     RawVisionTransformerRGBEncoder,
@@ -94,10 +94,10 @@ if __name__ == "__main__":
     object_detection_model = VitObjectDetectionNetwork(
         model_config=model_config, head_config=head_config
     )
-    object_detection_model.load_state_dict(torch.load("trained_models/exp15_object_detection.pth"))
-    dataset_dir = pathlib.Path(
-        "/home/manos/ml_interview_ready_code/data/"
+    object_detection_model.load_state_dict(
+        torch.load("trained_models/exp15_object_detection.pth")
     )
+    dataset_dir = pathlib.Path("/home/manos/ml_interview_ready_code/data/")
 
     # Copied from YOLOv5
     momentum = 0.9

@@ -7,7 +7,7 @@ from mnn.vision.models.vision_transformer.tasks.object_detection import (
 )
 import mnn.vision.dataset.utilities
 import mnn.vision.models.heads.object_detection
-import mnn.vision.dataset.coco.loader
+import mnn.vision.dataset.coco.torch_dataset
 from mnn.vision.dataset.coco.training.utils import *
 
 
