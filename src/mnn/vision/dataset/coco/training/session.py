@@ -19,7 +19,6 @@ def train_one_epoch(
     hyperparameters_config: mnn_config.HyperparametersConfiguration,
     current_epoch: int,
     io_transform: mnn_train_transform.BaseIOTransform = None,
-    prediction_transform: mnn_train_transform.BaseIOTransform = None,
     device: torch.device = torch.device("cpu"),
     validation_image_path: pathlib.Path = None,
     writer: torch.utils.tensorboard.SummaryWriter = None,
@@ -59,9 +58,6 @@ def train_one_epoch(
 
         # Forward pass
         output = model(image_batch)
-        if prediction_transform is not None:
-            output = prediction_transform.transform_output(output)
-            prediction_transform.update_transform_configuration()
 
         # Compute the loss and its gradients
         loss = loss_fn(output, target0)
