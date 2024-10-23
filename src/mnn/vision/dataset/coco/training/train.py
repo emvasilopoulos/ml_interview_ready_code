@@ -12,6 +12,7 @@ from mnn.vision.dataset.coco.experiments.detection_fading_bboxes_in_mask import 
 from mnn.vision.dataset.coco.training.transform import BaseIOTransform
 import mnn.vision.config as mnn_config
 import mnn.vision.dataset.coco.training.utils as mnn_coco_training_utils
+import mnn.torch_utils as mnn_utils
 from mnn.vision.dataset.coco.training.session import train_one_epoch, val_once
 from mnn.vision.image_size import ImageSize
 
@@ -63,7 +64,7 @@ def train_val(
 ):
     # Print model parameters
     LOGGER.info(
-        f"Created model with {mnn_coco_training_utils.count_parameters(object_detection_model) / (10 ** 6)} million parameters"
+        f"Created model with {mnn_utils.count_parameters(object_detection_model) / (10 ** 6)} million parameters"
     )
 
     # Set device
@@ -99,7 +100,10 @@ def train_val(
     LOGGER.info("========|> Open tensorboard with:\ntensorboard --logdir=runs")
     if not save_dir.exists():
         save_dir.mkdir(parents=True)
-    model_save_path = save_dir / f"{experiment}_object_detection.pth"
+    model_save_path = save_dir / f"{experiment}_object_detection_full_epoch.pth"
+    model_between_epoch_save_path = (
+        save_dir / f"{experiment}_object_detection_in_epoch.pth"
+    )
 
     for epoch in range(hyperparameters_config.epochs):
         LOGGER.info(f"---------- EPOCH-{epoch} ------------")
@@ -115,9 +119,12 @@ def train_val(
             validation_image_path=validation_image_path,
             writer=writer,
             log_rate=log_rate,
-            model_save_path=model_save_path,
+            model_save_path=model_between_epoch_save_path,
         )
-        torch.save(object_detection_model.state_dict(), model_save_path)
+
+        model_state = object_detection_model.state_dict()
+        model_state["epoch"] = epoch
+        torch.save(model_state, model_save_path)
         val_loss = val_once(
             val_loader,
             object_detection_model,

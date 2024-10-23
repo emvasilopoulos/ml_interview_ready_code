@@ -8,7 +8,6 @@ import mnn.vision.process_input.dimensions.pad as mnn_pad
 
 @dataclasses.dataclass
 class ResizeFixedRatioComponents:
-
     resize_height: int
     resize_width: int
     pad_dimension: int

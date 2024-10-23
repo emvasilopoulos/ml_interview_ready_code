@@ -88,15 +88,14 @@ def train_one_epoch(
         running_loss += current_loss
         running_iou_05 += current_iou_05
         if i % log_rate == 0:
-            torch.save(model.state_dict(), model_save_path)
-            with open("model_steps_till_now.txt", "w") as f:
-                f.write(
-                    f"Trained till step: {training_step} | Total steps per epoch: {len(train_loader)}"
-                )
+            model_state = model.state_dict()
+            model_state["epoch"] = current_epoch
+            model_state["step"] = training_step
             last_loss = running_loss / log_rate
-            print(
-                f"Training step {training_step} | Loss: {last_loss:.4f} | IoU-0.5: {running_iou_05 / log_rate:.4f}",
-            )
+            model_state["loss"] = running_loss / log_rate
+            model_state["IoU"] = running_iou_05 / log_rate
+            torch.save(model_state, model_save_path)
+
             running_loss = 0
             running_iou_05 = 0
 

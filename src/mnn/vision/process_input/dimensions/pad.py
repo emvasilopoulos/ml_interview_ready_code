@@ -11,10 +11,6 @@ def pad_image(
     if padding_percent < 0 or padding_percent > 1:
         raise ValueError("The padding_percent should be between 0 and 1")
 
-    if x.shape[0] != 3:
-        raise ValueError("The image should have 3 channels")
-
-    # Expecting tensors of shape (3, H, W)
     x_dim_size = x.shape[pad_dimension]
     pad_amount = expected_dimension_size - x_dim_size
     top_pad = int(pad_amount * padding_percent)

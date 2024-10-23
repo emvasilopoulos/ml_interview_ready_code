@@ -143,6 +143,7 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
         output0 = self.get_output_tensor(
             img_tensor, annotations, padding_percent=padding_percent
         )
+        print(output0.shape)
         return img_tensor, output0
 
     @abc.abstractmethod

@@ -74,8 +74,8 @@ class COCOInstances2017FBM(COCODatasetInstances2017):
     ) -> torch.Tensor:
         bboxes = []
         categories = []
+        # THERE'S A BUG HERE
         img_h, img_w = img.shape[1], img.shape[2]
-
         # Add whole image as a bounding box
         bboxes.append([0, 0, 1, 1])
         for annotation in annotations:
@@ -86,26 +86,32 @@ class COCOInstances2017FBM(COCODatasetInstances2017):
             ):
                 continue
             x1, y1, w, h = annotation["bbox"]
-            bboxes.append([x1 / img_w, y1 / img_h, w / img_w, h / img_h])
-            categories.append(annotation["category_id"])
 
+            # THERE'S A BUG HERE because x1 + w > 1 in many cases or y1 + h > 1
+            normalized_bbox = [x1 / img_w, y1 / img_h, w / img_w, h / img_h]
+            bboxes.append(normalized_bbox)
+
+            categories.append(annotation["category_id"])
         current_image_size = mnn.vision.image_size.ImageSize(img_w, img_h)
-        (
-            resize_height,
-            resize_width,
-            pad_dimension,
-            expected_dimension_size_after_pad,
-        ) = mnn_resize_fixed_ratio.calculate_new_tensor_dimensions(
-            current_image_size, self.expected_image_size
+        resize_fixed_ratio_components = (
+            mnn_resize_fixed_ratio.calculate_new_tensor_dimensions(
+                current_image_size, self.expected_image_size
+            )
         )
 
         bboxes_as_mask = mnn_fading_bboxes_in_mask.FadingBboxMasks.bboxes_to_mask(
-            torch.Tensor(bboxes).float(), torch.Size((resize_height, resize_width))
+            torch.Tensor(bboxes).float(),
+            torch.Size(
+                (
+                    resize_fixed_ratio_components.resize_height,
+                    resize_fixed_ratio_components.resize_width,
+                )
+            ),
         )
         bboxes_as_mask = mnn_pad.pad_image(
             bboxes_as_mask.unsqueeze(0),
-            pad_dimension=pad_dimension,
-            expected_dimension_size=expected_dimension_size_after_pad,
+            pad_dimension=resize_fixed_ratio_components.pad_dimension,
+            expected_dimension_size=resize_fixed_ratio_components.expected_dimension_size,
             padding_percent=padding_percent,
         ).squeeze(0)
 

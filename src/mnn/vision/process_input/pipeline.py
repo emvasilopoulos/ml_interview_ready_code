@@ -6,14 +6,19 @@ import torchvision
 import mnn.vision.process_input.reader
 
 
-class SingletonClass(object):
-    def __new__(cls):
-        if not hasattr(cls, "instance"):
-            cls.instance = super(SingletonClass, cls).__new__(cls)
-        return cls.instance
+def singleton(cls):
+    """Use as decorator of class"""
+    instances = {}
+
+    def get_instance(*args, **kwargs):
+        if cls not in instances:
+            instances[cls] = cls(*args, **kwargs)
+        return instances[cls]
+
+    return get_instance
 
 
-class ProcessInputPipeline(SingletonClass):
+class ProcessInputPipeline:
 
     def __init__(
         self,
@@ -25,6 +30,9 @@ class ProcessInputPipeline(SingletonClass):
             [dtype_converter, normalize] + modules_list
         )
 
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        return self.process_input(x)
+
     def process_input(self, x: torch.Tensor) -> torch.Tensor:
         return self.__pipeline(x)
 
@@ -33,4 +41,11 @@ class ProcessInputPipeline(SingletonClass):
             mnn.vision.process_input.reader.read_image_torchvision(image_path)
         )
 
-    pass
+
+if __name__ == "__main__":
+    import mnn.vision.process_input.normalize.basic
+
+    pipeline = ProcessInputPipeline(
+        dtype_converter=torchvision.transforms.ConvertImageDtype(torch.float32),
+        normalize=mnn.vision.process_input.normalize.basic.NORMALIZE,
+    )
