@@ -1,7 +1,10 @@
-import torchvision
+import torch
 
 
-NORMALIZE = torchvision.transforms.Normalize(
-    mean=[0.5, 0.5, 0.5],
-    std=[0.5, 0.5, 0.5],
-)
+class BasicNormalize(torch.nn.Module):
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x / 255.0
+
+
+NORMALIZE = BasicNormalize()

@@ -10,14 +10,14 @@ import numpy as np
 import numpy.typing as npt
 import torchvision
 
+import mnn.vision.process_input.dimensions.pad as mnn_pad
+import mnn.vision.process_input.dimensions.resize as mnn_resize
 import mnn.vision.image_size
 import mnn.vision.process_input.format
 import mnn.vision.process_input.dimensions.resize_fixed_ratio as mnn_resize_fixed_ratio
-import mnn.vision.process_input.normalize
 import mnn.vision.process_input.normalize.basic
-from mnn.vision.process_input.pipeline import ProcessInputPipeline
-from mnn.vision.process_input.reader import read_image_torchvision
-import mnn.vision.process_output
+import mnn.vision.process_input.pipeline
+import mnn.vision.process_input.reader
 import mnn.vision.process_output.object_detection
 import mnn.vision.process_output.object_detection.rectangles_to_mask
 
@@ -105,8 +105,10 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
         self._load_json_data()
         self.desired_classes = classes
 
-        self.input_pipeline = ProcessInputPipeline(
-            dtype_converter=torchvision.transforms.ConvertImageDtype(torch.float32),
+        self.input_pipeline = mnn.vision.process_input.pipeline.ProcessInputPipeline(
+            dtype_converter=mnn.vision.process_input.pipeline.MyConvertImageDtype(
+                torch.float32
+            ),
             normalize=mnn.vision.process_input.normalize.basic.NORMALIZE,
         )
 
@@ -120,39 +122,73 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return len(self.images)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
+    def get_pair(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        # Get image and annotations
         image_sample_i = self.images[idx]
         filename = image_sample_i["file_name"]
         sample_i_id = str(image_sample_i["id"])
         annotations = self.annotations.get(sample_i_id, [])
 
-        # Prepare input
-        img_tensor = read_image_torchvision(self.images_dir / filename)
+        # Read image as tensor
+        img_tensor = mnn.vision.process_input.reader.read_image_torchvision(
+            self.images_dir / filename
+        )
+        if img_tensor.shape[0] == 1:
+            img_tensor = img_tensor.repeat(3, 1, 1)
         img_tensor = self.input_pipeline(img_tensor)
+        img_w = img_tensor.shape[2]
+        img_h = img_tensor.shape[1]
 
+        # Normalize bounding boxes
+        for annotation in annotations:
+            x1, y1, w, h = annotation["bbox"]
+            normalized_bbox = [x1 / img_w, y1 / img_h, w / img_w, h / img_h]
+            annotation["normalized_bbox"] = normalized_bbox
+        return img_tensor, annotations
+
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        img_tensor, annotations = self.get_pair(idx)
+
+        # Calculate new dimensions & resize only
+        current_image_size = mnn.vision.image_size.ImageSize(
+            width=img_tensor.shape[2], height=img_tensor.shape[1]
+        )
+        fixed_ratio_components = mnn_resize_fixed_ratio.calculate_new_tensor_dimensions(
+            current_image_size, self.expected_image_size
+        )
+        img_tensor = mnn_resize.resize_image(
+            img_tensor,
+            fixed_ratio_components.resize_height,
+            fixed_ratio_components.resize_width,
+        )
+
+        # Random padding that both input & output must know about
         padding_percent = random.random()
         pad_value = random.random()
-        img_tensor = mnn_resize_fixed_ratio.transform(
-            img_tensor,
-            self.expected_image_size,
+
+        # Prepare output based on expected image size & padding that will be applied in image
+        output0 = self.get_output_tensor(
+            annotations,
+            fixed_ratio_components,
             padding_percent=padding_percent,
-            pad_value=pad_value,
         )
 
-        # Prepare output
-        output0 = self.get_output_tensor(
-            img_tensor, annotations, padding_percent=padding_percent
+        # Apply padding to image
+        img_tensor = mnn_pad.pad_image(
+            img_tensor,
+            fixed_ratio_components.pad_dimension,
+            fixed_ratio_components.expected_dimension_size,
+            padding_percent,
+            pad_value,
         )
-        print(output0.shape)
         return img_tensor, output0
 
     @abc.abstractmethod
-    def get_output(self, img: np.ndarray, annotations: Dict[str, Any]) -> torch.Tensor:
-        pass
-
-    @abc.abstractmethod
     def get_output_tensor(
-        self, img: torch.Tensor, annotations: Dict[str, Any]
+        self,
+        annotations: Dict[str, Any],
+        fixed_ratio_components: mnn_resize_fixed_ratio.ResizeFixedRatioComponents,
+        padding_percent: float = 0,
     ) -> torch.Tensor:
         pass
 
