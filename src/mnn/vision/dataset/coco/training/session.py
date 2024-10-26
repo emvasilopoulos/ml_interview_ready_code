@@ -101,10 +101,11 @@ def train_one_epoch(
 
             # Store validation image to inspect the model's performance
             temp_out = model(validation_image)
-            mnn_train_utils.write_image_with_mask(
+            # TODO: USE ABSTRACT METHOD TO WRITE IMAGE
+            mnn_train_utils.write_image_with_output_of_experiment2(
                 temp_out, validation_image, "validation_image_prediction"
             )
-            mnn_train_utils.write_image_with_mask(
+            mnn_train_utils.write_image_with_output_of_experiment2(
                 target0[0].unsqueeze(0),
                 image_batch[0].unsqueeze(0),
                 "train_image_ground_truth",

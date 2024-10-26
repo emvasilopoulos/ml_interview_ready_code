@@ -78,7 +78,7 @@ def train_val(
         validation_image_path, object_detection_model.expected_image_size
     ).to(device, dtype=hyperparameters_config.floating_point_precision)
     temp_out = object_detection_model(validation_image)
-    mnn_coco_training_utils.write_image_with_mask(
+    mnn_coco_training_utils.write_image_with_output_of_experiment2(
         temp_out, validation_image, "pre-session_prediction"
     )
 
