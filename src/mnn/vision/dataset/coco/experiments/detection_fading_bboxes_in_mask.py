@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import torch
 
@@ -7,6 +7,7 @@ import mnn.vision.process_input.dimensions.pad as mnn_pad
 import mnn.vision.process_input.dimensions.resize_fixed_ratio as mnn_resize_fixed_ratio
 
 import mnn.vision.process_output.object_detection.rectangles_to_mask as mnn_rectangles_to_mask
+import mnn.vision.image_size
 
 
 class COCOInstances2017FBM(COCODatasetInstances2017):
@@ -20,6 +21,7 @@ class COCOInstances2017FBM(COCODatasetInstances2017):
         annotations: Dict[str, Any],
         fixed_ratio_components: mnn_resize_fixed_ratio.ResizeFixedRatioComponents,
         padding_percent: float = 0,
+        current_image_size: Optional[mnn.vision.image_size.ImageSize] = None,
     ) -> torch.Tensor:
         bboxes = []
         categories = []
@@ -73,7 +75,7 @@ if __name__ == "__main__":
         dataset_dir, "val", expected_image_size, classes=None
     )
     image_batch, target0 = val_dataset[0]
-    mnn_train_utils.write_image_with_mask(
+    mnn_train_utils.write_image_with_output_of_experiment1(
         target0.unsqueeze(0),
         image_batch.unsqueeze(0),
         "train_image_ground_truth",

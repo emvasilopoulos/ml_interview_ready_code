@@ -1,6 +1,6 @@
 import abc
 import random
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import json
 import pathlib
 
@@ -171,6 +171,7 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
             annotations,
             fixed_ratio_components,
             padding_percent=padding_percent,
+            current_image_size=current_image_size,
         )
 
         # Apply padding to image
@@ -189,6 +190,7 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
         annotations: Dict[str, Any],
         fixed_ratio_components: mnn_resize_fixed_ratio.ResizeFixedRatioComponents,
         padding_percent: float = 0,
+        current_image_size: Optional[mnn.vision.image_size.ImageSize] = None,
     ) -> torch.Tensor:
         pass
 
