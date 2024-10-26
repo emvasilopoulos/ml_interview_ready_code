@@ -28,10 +28,13 @@ def load_datasets(
     mnn_fading_bboxes_in_mask.COCOInstances2017FBM,
 ]:
     classes = None
+    train_dataset = mnn_fading_bboxes_in_mask.COCOInstances2017FBM(
+        dataset_dir, "train", expected_image_size, classes=classes
+    )
     val_dataset = mnn_fading_bboxes_in_mask.COCOInstances2017FBM(
         dataset_dir, "val", expected_image_size, classes=classes
     )
-    return None, val_dataset
+    return train_dataset, val_dataset
 
 
 def load_model(
@@ -92,11 +95,9 @@ if __name__ == "__main__":
     expected_image_size = model.expected_image_size
     classes = None  # ALL CLASSES
     train_dataset, val_dataset = load_datasets(dataset_dir, expected_image_size)
+    for i in range(10):
+        img_tensor, annotations = val_dataset.get_pair(i)
 
-    val_loader = torch.utils.data.DataLoader(
-        val_dataset,
-        batch_size=4,
-        shuffle=True,
-    )
-    for i, (x, y) in enumerate(val_loader):
-        print("----------------------")
+        # to opencv image
+        print(img_tensor.min())
+        print(img_tensor.max())
