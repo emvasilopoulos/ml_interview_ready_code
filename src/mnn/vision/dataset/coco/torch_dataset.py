@@ -122,6 +122,7 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
     def __len__(self) -> int:
         return len(self.images)
 
+    _current_sample: str = ""
     def get_pair(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
         # Get image and annotations
         image_sample_i = self.images[idx]
@@ -129,6 +130,7 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
         sample_i_id = str(image_sample_i["id"])
         annotations = self.annotations.get(sample_i_id, [])
 
+        self._current_sample = filename
         # Read image as tensor
         img_tensor = mnn.vision.process_input.reader.read_image_torchvision(
             self.images_dir / filename
