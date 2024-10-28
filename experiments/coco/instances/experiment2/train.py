@@ -1,7 +1,7 @@
 import argparse
 import pathlib
 from typing import List, Optional, Tuple
-import logging
+import numpy as np
 
 import torch
 import torch.utils.tensorboard
@@ -14,9 +14,9 @@ from mnn.vision.dataset.coco.training.train import (
 import mnn.vision.dataset.coco.experiments.detection_ordinal as mnn_ordinal
 import mnn.vision.models.vision_transformer.ready_architectures.experiment1.model as mnn_vit_model
 import mnn.vision.models.vision_transformer.ready_architectures.experiment1.config as mnn_vit_config
+import mnn.logging
 
-LOGGER = logging.getLogger(__name__)
-LOGGER.setLevel(logging.INFO)
+LOGGER = mnn.logging.get_logger(__name__)
 
 
 def load_datasets(
@@ -43,12 +43,83 @@ def load_model(
 ) -> mnn_vit_model.VitObjectDetectionNetwork:
     model_config, _, head_config = mnn_vit_config.load_model_config(config_path)
     model = mnn_vit_model.VitObjectDetectionNetwork(
-        model_config=model_config, head_config=head_config
+        model_config=model_config, head_config=head_config, head_activation=torch.nn.Sigmoid()
     )
     if existing_model_path:
         model.load_state_dict(torch.load(existing_model_path))
     return model
 
+class FocalLoss(torch.nn.Module):
+    def __init__(self, alpha: float = 0.25, gamma: float = 1.5):
+        super().__init__()
+
+        self.alpha = alpha
+        self.gamma = gamma
+        self.bce_loss = torch.nn.BCELoss()
+
+    def forward(self, inputs, targets):
+        p = inputs
+        ce_loss = self.bce_loss(inputs, targets)
+        p_t = p * targets + (1 - p) * (1 - targets)
+        loss = ce_loss * ((1 - p_t) ** self.gamma)
+
+        if self.alpha >= 0:
+            alpha_t = self.alpha * targets + (1 - self.alpha) * (1 - targets)
+            loss = alpha_t * loss
+
+        return loss.mean(1).sum()
+
+# Copied from ultralytics
+def get_params_grouped(model: torch.nn.Module):
+    bn = tuple(v for k, v in torch.nn.__dict__.items() if "Norm" in k)
+    parameters_grouped = [[], [], []]
+    for module_name, module in model.named_modules():
+        for param_name, param in module.named_parameters(recurse=False):
+            fullname = f"{module_name}.{param_name}" if module_name else param_name
+            if "bias" in fullname:  # bias (no decay)
+                parameters_grouped[2].append(param)
+            elif isinstance(module, bn):  # weight (no decay)
+                parameters_grouped[1].append(param)
+            else:  # weight (with decay)
+                parameters_grouped[0].append(param)
+    return parameters_grouped
+
+import collections
+class MyLRScheduler:
+
+    def __init__(self, optimizer: torch.optim.Optimizer):
+        self.optimizer = optimizer
+        self.param_groups_initial_lrs = []
+        for param_group in self.optimizer.param_groups:
+            self.param_groups_initial_lrs.append(param_group["lr"])
+
+        self.losses = collections.deque(maxlen=50)
+        self.loss_moving_average = collections.deque(maxlen=50)
+        self.logger = mnn.logging.get_logger("MyLRScheduler")
+
+    def _reset_moving_average(self):
+        self.loss_moving_average = collections.deque(maxlen=50)
+
+    def _fit_line(self, data_points: List[float]):
+        x = [i for i in range(len(data_points))]
+        y = data_points
+        m, b = np.polyfit(x, y, 1)
+        return m, b
+
+    def add_batch_loss(self, loss: torch.nn.Module):
+        self.losses.append(loss.item())
+        current_mean = torch.Tensor(self.losses).mean()
+        self.loss_moving_average.append(current_mean)
+        if len(self.loss_moving_average) == self.loss_moving_average.maxlen:
+            line_angle, b = self._fit_line(self.loss_moving_average)
+            if line_angle > 0:
+                for i, param_group in enumerate(self.optimizer.param_groups):
+                    temp = param_group["lr"]
+                    param_group["lr"] *= 0.9
+                    if param_group["lr"] < 0.000001:
+                        param_group["lr"] = self.param_groups_initial_lrs[i]
+                    self.logger.info(f"Updating 'lr' for param_group-{i} from '{temp:.6f}' to {param_group['lr']} ")
+            self._reset_moving_average()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -79,6 +150,7 @@ if __name__ == "__main__":
     if args.existing_model_path is not None:
         existing_model_path = pathlib.Path(args.existing_model_path)
         LOGGER.info(f"Existing model: {args.existing_model_path}")
+        raise NotImplementedError("Continueing training not supported yet. Something to do with scheduler")
     else:
         existing_model_path = None
     model = load_model(model_config_path, existing_model_path)
@@ -101,14 +173,16 @@ if __name__ == "__main__":
     LOGGER.info("hyperparameters...")
     hyperparameters_config_path = pathlib.Path(args.hyperparameters_config_path)
     hyperparameters_config = load_hyperparameters_config(hyperparameters_config_path)
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    lrf = 0.01
-    lf = (
-        lambda x: max(1 - x / hyperparameters_config.epochs, 0) * (1.0 - lrf) + lrf
-    )  # linear
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
-    for i in range(hyperparameters_config.epochs):
-        scheduler.step()
+
+    parameters_grouped = get_params_grouped(model)
+    lr = hyperparameters_config.learning_rate
+    momentum = 0.937
+    decay = 0.001
+    optimizer = torch.optim.Adam(parameters_grouped[2], lr=lr, betas=(momentum, 0.999), weight_decay=0.0)
+    optimizer.add_param_group({"params": parameters_grouped[0], "weight_decay": decay})
+    optimizer.add_param_group({"params": parameters_grouped[1], "weight_decay": 0.0})
+
+    scheduler = MyLRScheduler(optimizer)
 
     # Tensorboard
     LOGGER.info("tesnorboard summary writer. Open with: \ntensorboard --logdir=runs")
@@ -125,8 +199,8 @@ if __name__ == "__main__":
         train_dataset=train_dataset,
         val_dataset=val_dataset,
         object_detection_model=model,
-        loss_fn=torch.nn.BCELoss(),
-        optimizer=torch.optim.Adam(model.parameters(), lr=0.001),
+        loss_fn=FocalLoss(),
+        optimizer=optimizer,
         scheduler=scheduler,
         hyperparameters_config=hyperparameters_config,
         writer=writer,
