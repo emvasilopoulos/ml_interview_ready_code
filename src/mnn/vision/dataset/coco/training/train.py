@@ -15,10 +15,9 @@ import mnn.vision.dataset.coco.training.utils as mnn_coco_training_utils
 import mnn.torch_utils as mnn_utils
 from mnn.vision.dataset.coco.training.session import train_one_epoch, val_once
 from mnn.vision.image_size import ImageSize
+import mnn.logging
 
-
-LOGGER = logging.getLogger(__name__)
-LOGGER.setLevel(logging.INFO)
+LOGGER = mnn.logging.get_logger(__name__)
 
 
 def default_scheduler(
@@ -107,6 +106,7 @@ def train_val(
 
     for epoch in range(hyperparameters_config.epochs):
         LOGGER.info(f"---------- EPOCH-{epoch} ------------")
+        # LOGGER.info(f"Scheduler State:\n{scheduler.state_dict()}")
         train_one_epoch(
             train_loader,
             object_detection_model,
@@ -120,12 +120,13 @@ def train_val(
             writer=writer,
             log_rate=log_rate,
             model_save_path=model_between_epoch_save_path,
+            scheduler=scheduler # TODO MAKE TYPES RIGHT
         )
 
         model_state = object_detection_model.state_dict()
         model_state["epoch"] = epoch
         torch.save(model_state, model_save_path)
-        val_loss = val_once(
+        val_once(
             val_loader,
             object_detection_model,
             loss_fn,
@@ -135,4 +136,3 @@ def train_val(
             writer=writer,
             log_rate=log_rate,
         )
-        scheduler.step(val_loss)

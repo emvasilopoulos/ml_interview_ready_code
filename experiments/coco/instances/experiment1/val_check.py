@@ -14,9 +14,9 @@ from mnn.vision.dataset.coco.training.train import (
 import mnn.vision.dataset.coco.experiments.detection_fading_bboxes_in_mask as mnn_fading_bboxes_in_mask
 import mnn.vision.models.vision_transformer.ready_architectures.experiment1.model as mnn_vit_model
 import mnn.vision.models.vision_transformer.ready_architectures.experiment1.config as mnn_vit_config
+import mnn.logging
 
-LOGGER = logging.getLogger(__name__)
-LOGGER.setLevel(logging.INFO)
+LOGGER = mnn.logging.get_logger(__name__)
 
 
 def load_datasets(
