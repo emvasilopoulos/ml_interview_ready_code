@@ -6,7 +6,6 @@ import cv2
 import torch
 import torch.utils.tensorboard
 
-from mnn.vision.dataset.coco.experiments.detection_ordinal import decode_output_tensor
 import mnn.vision.image_size
 import mnn.vision.dataset.object_detection.fading_bboxes_in_mask
 
@@ -57,7 +56,9 @@ def write_image_with_output_of_experiment2(
     validation_image: torch.Tensor,
     sub_dir: str = "any",
 ):
-    bboxes, categories, confidence_scores = decode_output_tensor(temp_out.squeeze(0), filter_by_objectness_score=False)
+    bboxes, categories, confidence_scores = decode_output_tensor(
+        temp_out.squeeze(0), filter_by_objectness_score=False
+    )
 
     validation_img = validation_image.squeeze(0).detach().cpu()
     validation_img = validation_img.permute(1, 2, 0)

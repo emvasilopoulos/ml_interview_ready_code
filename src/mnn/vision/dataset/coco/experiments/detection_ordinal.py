@@ -14,6 +14,7 @@ Actually I will use 79 classes and fuck the 80th class. I don't care. So we have
 6. 560/4 = 140. I will use the vector with 140 to predict y2
 """
 
+import abc
 import os
 import pathlib
 from typing import Any, Dict, Optional
@@ -30,12 +31,13 @@ import mnn.logging
 LOGGER = mnn.logging.get_logger(__name__)
 
 
-class COCOInstances2017Ordinal(COCODatasetInstances2017):
+class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
     """
     Everything Ordinal
     """
 
     ORDINAL_EXPANSION = 4
+    TOTAL_POSSIBLE_OBJECTS = 100  # COCO has max 98 objects in one image
 
     def __init__(
         self,
@@ -155,6 +157,24 @@ class COCOInstances2017Ordinal(COCODatasetInstances2017):
         vector[self.bbox_vector_size + len(self.classes)] = 1
         return vector
 
+    def _decode_coordinate_vector(
+        self, vector: torch.Tensor, image_dimension_size: int
+    ) -> int:
+        vector_size = vector.shape[0]
+        idx = torch.argmax(vector).item()
+        # idx = idx + 1 if idx < vector_size - 1 else idx
+        normalized_coordinate = idx / (vector_size - 1)
+        return int(normalized_coordinate * image_dimension_size)
+
+    @abc.abstractmethod
+    def decode_output_tensor(
+        self, y: torch.Tensor, filter_by_objectness_score: bool = False
+    ):
+        pass
+
+
+class COCOInstances2017Ordinal(BaseCOCOInstances2017Ordinal):
+
     def get_output_tensor(
         self,
         annotations: Dict[str, Any],
@@ -260,55 +280,223 @@ class COCOInstances2017Ordinal(COCODatasetInstances2017):
             output_tensor[1 + i, :] = vector
         return output_tensor
 
+    def decode_output_tensor(
+        self, y: torch.Tensor, filter_by_objectness_score: bool = False
+    ):
+        n_vectors, vector_size = y.shape
+        n_objects_vector = y[0, :]
+        n_objects = torch.argmax(n_objects_vector)
+        if n_objects > self.TOTAL_POSSIBLE_OBJECTS:
+            # Unwanted behaviour by the model. Don't do anything. Keep it in mind.
+            pass
 
-def _decode_coordinate_vector(vector: torch.Tensor, image_dimension_size: int) -> int:
-    vector_size = vector.shape[0]
-    idx = torch.argmax(vector).item()
-    # idx = idx + 1 if idx < vector_size - 1 else idx
-    normalized_coordinate = idx / (vector_size - 1)
-    return int(normalized_coordinate * image_dimension_size)
+        bbox_vector_size = vector_size - 80
+        _coord_step = bbox_vector_size // 4
+
+        objects = y[
+            1 : self.TOTAL_POSSIBLE_OBJECTS + 1, :
+        ]  # The rest should be ignored
+        h, w = y.shape[0], y.shape[1]
+
+        bboxes = []
+        categories = []
+        objectness_scores = []
+        for o in objects:
+            objectness_score = o[-1]
+            if filter_by_objectness_score and objectness_score < 0.5:
+                continue
+            bbox_raw = o[: (len(o) - 80)]
+            x1 = COCOInstances2017Ordinal._decode_coordinate_vector(
+                bbox_raw[:_coord_step], w
+            )
+            y1 = COCOInstances2017Ordinal._decode_coordinate_vector(
+                bbox_raw[_coord_step : 2 * _coord_step], h
+            )
+            x2 = COCOInstances2017Ordinal._decode_coordinate_vector(
+                bbox_raw[2 * _coord_step : 3 * _coord_step], w
+            )
+            y2 = COCOInstances2017Ordinal._decode_coordinate_vector(
+                bbox_raw[3 * _coord_step : 4 * _coord_step], h
+            )
+
+            if all(x == 0 for x in [x1, y1, x2, y2]):
+                continue
+            bbox = [x1, y1, x2, y2]
+            category = torch.argmax(o[(len(o) - 80) :])
+            bboxes.append(bbox)
+            categories.append(category)
+            objectness_scores.append(objectness_score)
+
+        # Sort by objectness score
+        sorted_indices = sorted(
+            range(len(objectness_scores)),
+            key=lambda k: objectness_scores[k],
+            reverse=True,
+        )
+        bboxes = [bboxes[i] for i in sorted_indices]
+        categories = [categories[i] for i in sorted_indices]
+        objectness_scores = [objectness_scores[i] for i in sorted_indices]
+        return bboxes[:n_objects], categories[:n_objects], objectness_scores[:n_objects]
 
 
-def decode_output_tensor(y: torch.Tensor, filter_by_objectness_score: bool = False):
-    n_vectors, vector_size = y.shape
-    n_objects_vector = y[0, :]
-    n_objects = torch.argmax(n_objects_vector)
+class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
 
-    bbox_vector_size = vector_size - 80
-    _coord_step = bbox_vector_size // 4
+    def get_output_tensor(
+        self,
+        annotations: Dict[str, Any],
+        fixed_ratio_components: mnn_resize_fixed_ratio.ResizeFixedRatioComponents,
+        padding_percent: float = 0,
+        current_image_size: Optional[mnn.vision.image_size.ImageSize] = None,
+    ) -> torch.Tensor:
+        output_tensor_bboxes = torch.zeros(
+            (self.expected_image_size.height, self.expected_image_size.width)
+        )
 
-    objects = y[1:, :]
-    h, w = y.shape[0], y.shape[1]
+        # Add vector with number of objects
+        n_objects = len(output_tensor_bboxes)
+        if n_objects > self.max_objects:
+            """Keep the 'max_objects' objects with the highest area"""
+            # This point will never be reached, unless you're a dork and use an image width of less than 420 pixels.
+            raise NotImplementedError(
+                "Keeping the 'max_objects' objects with the highest area is not implemented yet"
+            )
 
-    bboxes = []
-    categories = []
-    objectness_scores = []
-    for o in objects:
-        objectness_score = o[-1]
-        if filter_by_objectness_score and objectness_score < 0.5:
-            continue
-        bbox_raw = o[: (len(o) - 80)]
-        x1 = _decode_coordinate_vector(bbox_raw[:_coord_step], w)
-        y1 = _decode_coordinate_vector(bbox_raw[_coord_step : 2 * _coord_step], h)
-        x2 = _decode_coordinate_vector(bbox_raw[2 * _coord_step : 3 * _coord_step], w)
-        y2 = _decode_coordinate_vector(bbox_raw[3 * _coord_step : 4 * _coord_step], h)
+        output_tensor_n_objects = torch.zeros(
+            (self.expected_image_size.height, self.expected_image_size.width)
+        )
+        output_tensor_n_objects[0, :] = self._create_number_of_objects_vector(
+            n_objects, self.expected_image_size.width
+        )
 
-        if all(x == 0 for x in [x1, y1, x2, y2]):
-            continue
-        bbox = [x1, y1, x2, y2]
-        category = torch.argmax(o[(len(o) - 80) :])
-        bboxes.append(bbox)
-        categories.append(category)
-        objectness_scores.append(objectness_score)
+        # Add whole image as a bounding box
+        vectors_for_output = []
+        for i, annotation in enumerate(annotations):
+            category = int(annotation["category_id"]) - 1
+            if self.desired_classes is not None and not (
+                self.desired_classes[0] <= category <= self.desired_classes[-1]
+            ):
+                continue
 
-    # Sort by objectness score
-    sorted_indices = sorted(
-        range(len(objectness_scores)), key=lambda k: objectness_scores[k], reverse=True
-    )
-    bboxes = [bboxes[i] for i in sorted_indices]
-    categories = [categories[i] for i in sorted_indices]
-    objectness_scores = [objectness_scores[i] for i in sorted_indices]
-    return bboxes[:n_objects], categories[:n_objects], objectness_scores[:n_objects]
+            x1, y1, w, h = annotation["normalized_bbox"]
+            area = w * h
+            # Skip very small bboxes. Bad annotations
+            if area < 0.0004:
+                continue
+            # Skip very close to image borders bboxes. Bad annotations
+            if x1 > 0.99 or y1 > 0.99 or (x1 + w) <= 0.01 or (y1 + h) <= 0.01:
+                continue
+
+            if fixed_ratio_components.pad_dimension == 1:
+                pad_amount = (
+                    fixed_ratio_components.expected_dimension_size
+                    - fixed_ratio_components.resize_height
+                )
+                top_pad = int(pad_amount * padding_percent)
+
+                y1 = y1 * fixed_ratio_components.resize_height + top_pad
+                h = h * fixed_ratio_components.resize_height
+                if y1 + h > self.expected_image_size.height:
+                    h = self.expected_image_size.height - y1
+
+                x1 = x1 * fixed_ratio_components.resize_width
+                w = w * fixed_ratio_components.resize_width
+            elif fixed_ratio_components.pad_dimension == 2:
+                pad_amount = (
+                    fixed_ratio_components.expected_dimension_size
+                    - fixed_ratio_components.resize_width
+                )
+                left_pad = int(pad_amount * padding_percent)
+
+                x1 = x1 * fixed_ratio_components.resize_width + left_pad
+                w = w * fixed_ratio_components.resize_width
+                if x1 + w > self.expected_image_size.width:
+                    w = self.expected_image_size.width - x1
+
+                y1 = y1 * fixed_ratio_components.resize_height
+                h = h * fixed_ratio_components.resize_height
+            else:
+                raise ValueError("The pad_dimension should be 1 or 2")
+
+            x1 = int(x1)
+            y1 = int(y1)
+            w = int(w)
+            h = int(h)
+
+            x2 = (
+                x1 + w
+                if x1 + w < self.expected_image_size.width
+                else self.expected_image_size.width
+            )
+            y2 = (
+                y1 + h
+                if y1 + h < self.expected_image_size.height
+                else self.expected_image_size.height
+            )
+            bbox_ = [
+                x1 / self.expected_image_size.width,
+                y1 / self.expected_image_size.height,
+                x2 / self.expected_image_size.width,
+                y2 / self.expected_image_size.height,
+            ]
+            vector = self._create_object_vector(
+                bbox_, category, self.expected_image_size.width
+            )
+
+            vectors_for_output.append((vector, area))
+
+        # Sort by area and then place in output tensor, so there's at least a logic/order in the predictions
+        sorted_vectors_for_output = sorted(vectors_for_output, key=lambda x: x[1])
+        for i, (vector, area) in enumerate(sorted_vectors_for_output):
+            output_tensor_bboxes[i, :] = vector
+
+        return torch.stack([output_tensor_n_objects, output_tensor_bboxes])
+
+    def decode_output_tensor(
+        self, y: torch.Tensor, filter_by_objectness_score: bool = False
+    ):
+        """
+        y: torch.Tensor --> Stack [output_tensor_n_objects, output_tensor_bboxes]
+        """
+        _, _, vector_size = y.shape
+        n_objects_vector = y[0, 0, :]
+        n_objects = torch.argmax(n_objects_vector)
+        if n_objects == 0:
+            return [], [], []
+
+        bbox_vector_size = vector_size - 80
+        _coord_step = bbox_vector_size // 4
+
+        objects = y[1, : self.TOTAL_POSSIBLE_OBJECTS, :]
+        h, w = y.shape[0], y.shape[1]
+
+        bboxes = []
+        categories = []
+        objectness_scores = []
+        for o in objects:
+            objectness_score = o[-1]
+            if filter_by_objectness_score and objectness_score < 0.5:
+                continue
+            bbox_raw = o[: (len(o) - 80)]
+            x1 = self._decode_coordinate_vector(bbox_raw[:_coord_step], w)
+            y1 = self._decode_coordinate_vector(
+                bbox_raw[_coord_step : 2 * _coord_step], h
+            )
+            x2 = self._decode_coordinate_vector(
+                bbox_raw[2 * _coord_step : 3 * _coord_step], w
+            )
+            y2 = self._decode_coordinate_vector(
+                bbox_raw[3 * _coord_step : 4 * _coord_step], h
+            )
+
+            if all(x == 0 for x in [x1, y1, x2, y2]):
+                continue
+            bbox = [x1, y1, x2, y2]
+            category = torch.argmax(o[(len(o) - 80) :])
+            bboxes.append(bbox)
+            categories.append(category)
+            objectness_scores.append(objectness_score)
+
+        return bboxes[:n_objects], categories[:n_objects], objectness_scores[:n_objects]
 
 
 def write_image_with_output(
@@ -316,7 +504,9 @@ def write_image_with_output(
     validation_image: torch.Tensor,
     sub_dir: str = "any",
 ):
-    bboxes, categories, objectness_scores = decode_output_tensor(temp_out.squeeze(0))
+    bboxes, categories, objectness_scores = (
+        COCOInstances2017Ordinal.decode_output_tensor(temp_out.squeeze(0))
+    )
 
     validation_img = validation_image.squeeze(0).detach().cpu()
     validation_img = validation_img.permute(1, 2, 0)
@@ -325,7 +515,6 @@ def write_image_with_output(
 
     for bbox, category in zip(bboxes, categories):
         x1, y1, x2, y2 = bbox
-        print("Decoded:", x1, y1, x2, y2)
         cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
         cv2.putText(
             image,
