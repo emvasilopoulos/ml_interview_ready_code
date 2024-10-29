@@ -63,7 +63,7 @@ def train_val(
 ):
     # Print model parameters
     LOGGER.info(
-        f"Created model with {mnn_utils.count_parameters(object_detection_model) / (10 ** 6)} million parameters"
+        f"Created model with {mnn_utils.count_parameters(object_detection_model) / (10 ** 6):.2f} million parameters"
     )
 
     # Set device
@@ -91,7 +91,7 @@ def train_val(
     val_loader = torch.utils.data.DataLoader(
         val_dataset,
         batch_size=hyperparameters_config.batch_size,
-        shuffle=True,
+        shuffle=False,
         pin_memory=True,
     )
 

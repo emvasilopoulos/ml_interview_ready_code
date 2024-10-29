@@ -24,6 +24,7 @@ def train_one_epoch(
     writer: torch.utils.tensorboard.SummaryWriter = None,
     log_rate: int = 1000,
     model_save_path: pathlib.Path = pathlib.Path("my_vit_object_detection.pth"),
+    scheduler=None
 ) -> None:
 
     model.train()  # important for batch normalization and dropout layers
@@ -62,7 +63,8 @@ def train_one_epoch(
         # Compute the loss and its gradients
         loss = loss_fn(output, target0)
         loss.backward()
-
+        if scheduler is not None:
+            scheduler.add_batch_loss(loss)
         # Adjust learning weights
         optimizer.step()
 
@@ -167,7 +169,4 @@ def val_once(
             running_iou_05 += current_iou_05
             if i % log_rate == 0 and i > 0:
                 last_loss = running_loss / log_rate
-                print(
-                    f"Validation step {validation_step}, loss: {last_loss:.4f} IoU-0.5: {running_iou_05 / log_rate:.4f}"
-                )
         return last_loss

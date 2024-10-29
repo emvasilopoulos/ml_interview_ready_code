@@ -1,6 +1,6 @@
 """
 Consider the model's output is a tensor of shape (480, 640).
-I will face it as an output of 480 vectors. 
+I will face it as an output of 480 vectors.
 The first vector is the number of objects in the image.
 
 The rest 479 vectors are the predictions for each object.
@@ -23,8 +23,11 @@ import cv2
 
 from mnn.vision.dataset.coco.torch_dataset import COCODatasetInstances2017
 import mnn.vision.process_input.dimensions.resize_fixed_ratio as mnn_resize_fixed_ratio
-import mnn.vision.process_output.object_detection.rectangles_to_mask as mnn_rectangles_to_mask
 import mnn.vision.image_size
+
+import mnn.logging
+
+LOGGER = mnn.logging.get_logger(__name__)
 
 
 class COCOInstances2017Ordinal(COCODatasetInstances2017):
@@ -104,25 +107,27 @@ class COCOInstances2017Ordinal(COCODatasetInstances2017):
         x1_coord_norm, y1_coord_norm, x2_coord_norm, y2_coord_norm = bbox
         # Bbox
         coordinate_span_of_indices_length = self.bbox_vector_size // 4
+        scale_factor = coordinate_span_of_indices_length - 1
+
+        idx = round(x1_coord_norm * scale_factor)
         x1 = torch.zeros(coordinate_span_of_indices_length)
-        idx = round(x1_coord_norm * coordinate_span_of_indices_length)
         x1[idx] = 1
         x1 = self._expand_left(x1, idx)
         x1 = self._expand_right(x1, idx)
 
-        idx = round(y1_coord_norm * coordinate_span_of_indices_length)
+        idx = round(y1_coord_norm * scale_factor)
         y1 = torch.zeros(coordinate_span_of_indices_length)
         y1[idx] = 1
         y1 = self._expand_left(y1, idx)
         y1 = self._expand_right(y1, idx)
 
-        idx = round(x2_coord_norm * coordinate_span_of_indices_length) - 1
+        idx = round(x2_coord_norm * scale_factor)
         x2 = torch.zeros(coordinate_span_of_indices_length)
         x2[idx] = 1
         x2 = self._expand_left(x2, idx)
         x2 = self._expand_right(x2, idx)
 
-        idx = round(y2_coord_norm * coordinate_span_of_indices_length) - 1
+        idx = round(y2_coord_norm * scale_factor)
         y2 = torch.zeros(coordinate_span_of_indices_length)
         y2[idx] = 1
         y2 = self._expand_left(y2, idx)
@@ -174,6 +179,7 @@ class COCOInstances2017Ordinal(COCODatasetInstances2017):
         )
 
         # Add whole image as a bounding box
+        vectors_for_output = []
         for i, annotation in enumerate(annotations):
             category = int(annotation["category_id"]) - 1
             if self.desired_classes is not None and not (
@@ -182,6 +188,13 @@ class COCOInstances2017Ordinal(COCODatasetInstances2017):
                 continue
 
             x1, y1, w, h = annotation["normalized_bbox"]
+            area = w * h
+            # Skip very small bboxes. Bad annotations
+            if area < 0.0004:
+                continue
+            # Skip very close to image borders bboxes. Bad annotations
+            if x1 > 0.99 or y1 > 0.99 or (x1 + w) <= 0.01 or (y1 + h) <= 0.01:
+                continue
 
             if fixed_ratio_components.pad_dimension == 1:
                 pad_amount = (
@@ -239,7 +252,12 @@ class COCOInstances2017Ordinal(COCODatasetInstances2017):
                 bbox_, category, self.expected_image_size.width
             )
 
-            output_tensor[i + 1, :] = vector
+            vectors_for_output.append((vector, area))
+
+        # Sort by area and then place in output tensor, so there's at least a logic/order in the predictions
+        sorted_vectors_for_output = sorted(vectors_for_output, key=lambda x: x[1])
+        for i, (vector, area) in enumerate(sorted_vectors_for_output):
+            output_tensor[1 + i, :] = vector
         return output_tensor
 
 

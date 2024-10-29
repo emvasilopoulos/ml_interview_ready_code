@@ -20,6 +20,7 @@ class VitObjectDetectionNetwork(torch.nn.Module):
         self,
         model_config: mnn_encoder_config.MyBackboneVitConfiguration,
         head_config: mnn_encoder_config.VisionTransformerEncoderConfiguration,
+        head_activation: torch.nn.Module = torch.nn.Sigmoid
     ):
         super().__init__()
         expected_image_width = model_config.rgb_combinator_config.d_model
@@ -62,7 +63,8 @@ class VitObjectDetectionNetwork(torch.nn.Module):
             model_config.rgb_combinator_config.d_model, eps=layer_norm_eps, bias=bias
         )
 
-        self.head_activation = torch.nn.Sigmoid()
+        self.head_activation = head_activation
+        self.epoch = 0
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x_mean_ch = x.mean(dim=1)
@@ -77,3 +79,16 @@ class VitObjectDetectionNetwork(torch.nn.Module):
         x_ = self.layer_norm2(x_ + x0 + x1 + x2)  # Residual
 
         return self.head_activation(x_)
+
+    def state_dict(self, *args, **kwargs):
+        # Get the regular state_dict
+        state = super().state_dict(*args, **kwargs)
+        # Add the custom attribute
+        state['epoch'] = self.epoch
+        return state
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        # Load the custom attribute
+        self.epoch = state_dict.pop('epoch', 0)  # Default to 0 if not found
+        # Load the rest of the state_dict as usual
+        super().load_state_dict(state_dict, *args, **kwargs)

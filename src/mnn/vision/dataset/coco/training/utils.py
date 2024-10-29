@@ -57,19 +57,19 @@ def write_image_with_output_of_experiment2(
     validation_image: torch.Tensor,
     sub_dir: str = "any",
 ):
-    bboxes, categories, objectness_scores = decode_output_tensor(temp_out.squeeze(0))
+    bboxes, categories, confidence_scores = decode_output_tensor(temp_out.squeeze(0), filter_by_objectness_score=False)
 
     validation_img = validation_image.squeeze(0).detach().cpu()
     validation_img = validation_img.permute(1, 2, 0)
     image = (validation_img.numpy() * 255).astype("uint8")
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
-    for bbox, category in zip(bboxes, categories):
+    for bbox, category, confidence in zip(bboxes, categories, confidence_scores):
         x1, y1, x2, y2 = bbox
         cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
         cv2.putText(
             image,
-            str(category.item()),
+            f"{category.item()} - {confidence:.3f}",
             (x1, y1),
             cv2.FONT_HERSHEY_SIMPLEX,
             1,
@@ -77,6 +77,7 @@ def write_image_with_output_of_experiment2(
             2,
             cv2.LINE_AA,
         )
+
     # reverse mask
     os.makedirs(f"assessment_images/{sub_dir}", exist_ok=True)
     cv2.imwrite(f"assessment_images/{sub_dir}/bboxed_image.jpg", image)
