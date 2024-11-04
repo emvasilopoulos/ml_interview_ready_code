@@ -5,10 +5,6 @@ import json
 import pathlib
 
 import torch
-import cv2
-import numpy as np
-import numpy.typing as npt
-import torchvision
 
 import mnn.vision.process_input.dimensions.pad as mnn_pad
 import mnn.vision.process_input.dimensions.resize as mnn_resize
@@ -20,6 +16,9 @@ import mnn.vision.process_input.pipeline
 import mnn.vision.process_input.reader
 import mnn.vision.process_output.object_detection
 import mnn.vision.process_output.object_detection.rectangles_to_mask
+import mnn.logging
+
+LOGGER = mnn.logging.get_logger(__name__)
 
 
 class RawCOCOAnnotationsParser:
@@ -147,6 +146,13 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
             annotation["normalized_bbox"] = normalized_bbox
         return img_tensor, annotations
 
+    def _random_percentage(self):
+        side = random.randint(0, 1)
+        if side == 0:
+            return random.random() * 0.35
+        else:
+            return random.random() * 0.35 + 0.65
+
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
         img_tensor, annotations = self.get_pair(idx)
 
@@ -164,7 +170,7 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
         )
 
         # Random padding that both input & output must know about
-        padding_percent = random.random()
+        padding_percent = self.__random_percentage()
         pad_value = random.random()
 
         # Prepare output based on expected image size & padding that will be applied in image
@@ -193,7 +199,7 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
         padding_percent: float = 0,
         current_image_size: Optional[mnn.vision.image_size.ImageSize] = None,
     ) -> torch.Tensor:
-        pass
+        raise NotImplementedError()
 
 
 class COCODatasetInstances2017(BaseCOCODatasetGrouped):

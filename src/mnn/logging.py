@@ -1,11 +1,12 @@
 import logging
 
+
 # create logger
 def get_logger(name: str, loglevel: int = logging.INFO):
     logger = logging.getLogger(name)
     logger.setLevel(loglevel)
 
-    # create console handler and set level to debug
+    # create console handler and set level to info
     ch = logging.StreamHandler()
     ch.setLevel(loglevel)
 

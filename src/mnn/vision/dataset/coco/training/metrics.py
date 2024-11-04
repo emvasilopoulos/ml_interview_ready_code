@@ -50,6 +50,7 @@ def calculate_iou_bbox_batch(
     Returns:
         torch.Tensor: IoU score for each bounding box in the batch.
     """
+    print(preds.shape, targets.shape)
     # Calculate the intersection rectangle
     x1 = torch.max(preds[:, 0], targets[:, 0])
     y1 = torch.max(preds[:, 1], targets[:, 1])

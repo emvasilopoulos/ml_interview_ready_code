@@ -13,6 +13,22 @@ class ResizeFixedRatioComponents:
     pad_dimension: int
     expected_dimension_size: int
 
+    def get_pad_amount(self) -> int:
+        if self.pad_dimension == 1:
+            return self.expected_dimension_size - self.resize_height
+        elif self.pad_dimension == 2:
+            return self.expected_dimension_size - self.resize_width
+        else:
+            raise ValueError("Invalid pad dimension")
+
+    def as_tuple(self) -> tuple:
+        return (
+            self.resize_height,
+            self.resize_width,
+            self.pad_dimension,
+            self.expected_dimension_size,
+        )
+
 
 def calculate_new_tensor_dimensions(
     current_image_size: mnn.vision.image_size.ImageSize,

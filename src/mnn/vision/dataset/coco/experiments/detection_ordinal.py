@@ -37,7 +37,7 @@ class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
     """
 
     ORDINAL_EXPANSION = 4
-    TOTAL_POSSIBLE_OBJECTS = 100  # COCO has max 98 objects in one image
+    TOTAL_POSSIBLE_OBJECTS = 98  # COCO has max 98 objects in one image
 
     def __init__(
         self,
@@ -152,7 +152,6 @@ class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
 
         # Category
         vector[self.bbox_vector_size + category] = 1
-
         # Objectness score
         vector[self.bbox_vector_size + len(self.classes)] = 1
         return vector
@@ -171,6 +170,36 @@ class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
         self, y: torch.Tensor, filter_by_objectness_score: bool = False
     ):
         pass
+
+    def map_bbox_to_padded_image(
+        self,
+        x1: float,
+        y1: float,
+        w: float,
+        h: float,
+        fixed_ratio_components: mnn_resize_fixed_ratio.ResizeFixedRatioComponents,
+        padding_percent: float,
+    ):
+        max_pad_amount = fixed_ratio_components.get_pad_amount()
+        pad_amount = int(max_pad_amount * padding_percent)
+        if fixed_ratio_components.pad_dimension == 1:
+            y1 += pad_amount
+        elif fixed_ratio_components.pad_dimension == 2:
+            x1 += pad_amount
+        else:
+            raise ValueError("The pad_dimension should be 1 or 2")
+
+        x2 = (
+            x1 + w
+            if x1 + w < self.expected_image_size.width
+            else self.expected_image_size.width
+        )
+        y2 = (
+            y1 + h
+            if y1 + h < self.expected_image_size.height
+            else self.expected_image_size.height
+        )
+        return x1, y1, x2, y2
 
 
 class COCOInstances2017Ordinal(BaseCOCOInstances2017Ordinal):
@@ -207,69 +236,35 @@ class COCOInstances2017Ordinal(BaseCOCOInstances2017Ordinal):
             ):
                 continue
 
-            x1, y1, w, h = annotation["normalized_bbox"]
-            area = w * h
+            x1_norm, y1_norm, w_norm, h_norm = annotation["normalized_bbox"]
+            area = w_norm * h_norm
             # Skip very small bboxes. Bad annotations
             if area < 0.0004:
                 continue
             # Skip very close to image borders bboxes. Bad annotations
-            if x1 > 0.99 or y1 > 0.99 or (x1 + w) <= 0.01 or (y1 + h) <= 0.01:
+            if (
+                x1_norm > 0.99
+                or y1_norm > 0.99
+                or (x1_norm + w_norm) <= 0.01
+                or (y1_norm + h_norm) <= 0.01
+            ):
                 continue
 
-            if fixed_ratio_components.pad_dimension == 1:
-                pad_amount = (
-                    fixed_ratio_components.expected_dimension_size
-                    - fixed_ratio_components.resize_height
-                )
-                top_pad = int(pad_amount * padding_percent)
-
-                y1 = y1 * fixed_ratio_components.resize_height + top_pad
-                h = h * fixed_ratio_components.resize_height
-                if y1 + h > self.expected_image_size.height:
-                    h = self.expected_image_size.height - y1
-
-                x1 = x1 * fixed_ratio_components.resize_width
-                w = w * fixed_ratio_components.resize_width
-            elif fixed_ratio_components.pad_dimension == 2:
-                pad_amount = (
-                    fixed_ratio_components.expected_dimension_size
-                    - fixed_ratio_components.resize_width
-                )
-                left_pad = int(pad_amount * padding_percent)
-
-                x1 = x1 * fixed_ratio_components.resize_width + left_pad
-                w = w * fixed_ratio_components.resize_width
-                if x1 + w > self.expected_image_size.width:
-                    w = self.expected_image_size.width - x1
-
-                y1 = y1 * fixed_ratio_components.resize_height
-                h = h * fixed_ratio_components.resize_height
-            else:
-                raise ValueError("The pad_dimension should be 1 or 2")
-
-            x1 = int(x1)
-            y1 = int(y1)
-            w = int(w)
-            h = int(h)
-
-            x2 = (
-                x1 + w
-                if x1 + w < self.expected_image_size.width
-                else self.expected_image_size.width
+            x1 = x1_norm * fixed_ratio_components.resize_width
+            y1 = y1_norm * fixed_ratio_components.resize_height
+            w = w_norm * fixed_ratio_components.resize_width
+            h = h_norm * fixed_ratio_components.resize_height
+            x1, x2, y1, y2 = self.map_bbox_to_padded_image(
+                x1, y1, w, h, fixed_ratio_components, padding_percent
             )
-            y2 = (
-                y1 + h
-                if y1 + h < self.expected_image_size.height
-                else self.expected_image_size.height
-            )
-            bbox_ = [
+            new_bbox_norm = [
                 x1 / self.expected_image_size.width,
                 y1 / self.expected_image_size.height,
                 x2 / self.expected_image_size.width,
                 y2 / self.expected_image_size.height,
             ]
             vector = self._create_object_vector(
-                bbox_, category, self.expected_image_size.width
+                new_bbox_norm, category, self.expected_image_size.width
             )
 
             vectors_for_output.append((vector, area))
@@ -306,36 +301,34 @@ class COCOInstances2017Ordinal(BaseCOCOInstances2017Ordinal):
             if filter_by_objectness_score and objectness_score < 0.5:
                 continue
             bbox_raw = o[: (len(o) - 80)]
-            x1 = COCOInstances2017Ordinal._decode_coordinate_vector(
-                bbox_raw[:_coord_step], w
-            )
-            y1 = COCOInstances2017Ordinal._decode_coordinate_vector(
+            x1 = self._decode_coordinate_vector(bbox_raw[:_coord_step], w)
+            y1 = self._decode_coordinate_vector(
                 bbox_raw[_coord_step : 2 * _coord_step], h
             )
-            x2 = COCOInstances2017Ordinal._decode_coordinate_vector(
+            x2 = self._decode_coordinate_vector(
                 bbox_raw[2 * _coord_step : 3 * _coord_step], w
             )
-            y2 = COCOInstances2017Ordinal._decode_coordinate_vector(
+            y2 = self._decode_coordinate_vector(
                 bbox_raw[3 * _coord_step : 4 * _coord_step], h
             )
 
             if all(x == 0 for x in [x1, y1, x2, y2]):
                 continue
             bbox = [x1, y1, x2, y2]
-            category = torch.argmax(o[(len(o) - 80) :])
+            category = torch.argmax(o[(len(o) - 80) : -1])
             bboxes.append(bbox)
             categories.append(category)
             objectness_scores.append(objectness_score)
 
-        # Sort by objectness score
-        sorted_indices = sorted(
-            range(len(objectness_scores)),
-            key=lambda k: objectness_scores[k],
-            reverse=True,
-        )
-        bboxes = [bboxes[i] for i in sorted_indices]
-        categories = [categories[i] for i in sorted_indices]
-        objectness_scores = [objectness_scores[i] for i in sorted_indices]
+        # # Sort by objectness score
+        # sorted_indices = sorted(
+        #     range(len(objectness_scores)),
+        #     key=lambda k: objectness_scores[k],
+        #     reverse=True,
+        # )
+        # bboxes = [bboxes[i] for i in sorted_indices]
+        # categories = [categories[i] for i in sorted_indices]
+        # objectness_scores = [objectness_scores[i] for i in sorted_indices]
         return bboxes[:n_objects], categories[:n_objects], objectness_scores[:n_objects]
 
 
@@ -353,7 +346,7 @@ class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
         )
 
         # Add vector with number of objects
-        n_objects = len(output_tensor_bboxes)
+        n_objects = len(annotations)
         if n_objects > self.max_objects:
             """Keep the 'max_objects' objects with the highest area"""
             # This point will never be reached, unless you're a dork and use an image width of less than 420 pixels.
@@ -377,69 +370,35 @@ class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
             ):
                 continue
 
-            x1, y1, w, h = annotation["normalized_bbox"]
-            area = w * h
+            x1_norm, y1_norm, w_norm, h_norm = annotation["normalized_bbox"]
+            area = w_norm * h_norm
             # Skip very small bboxes. Bad annotations
             if area < 0.0004:
                 continue
             # Skip very close to image borders bboxes. Bad annotations
-            if x1 > 0.99 or y1 > 0.99 or (x1 + w) <= 0.01 or (y1 + h) <= 0.01:
+            if (
+                x1_norm > 0.99
+                or y1_norm > 0.99
+                or (x1_norm + w_norm) <= 0.01
+                or (y1_norm + h_norm) <= 0.01
+            ):
                 continue
 
-            if fixed_ratio_components.pad_dimension == 1:
-                pad_amount = (
-                    fixed_ratio_components.expected_dimension_size
-                    - fixed_ratio_components.resize_height
-                )
-                top_pad = int(pad_amount * padding_percent)
-
-                y1 = y1 * fixed_ratio_components.resize_height + top_pad
-                h = h * fixed_ratio_components.resize_height
-                if y1 + h > self.expected_image_size.height:
-                    h = self.expected_image_size.height - y1
-
-                x1 = x1 * fixed_ratio_components.resize_width
-                w = w * fixed_ratio_components.resize_width
-            elif fixed_ratio_components.pad_dimension == 2:
-                pad_amount = (
-                    fixed_ratio_components.expected_dimension_size
-                    - fixed_ratio_components.resize_width
-                )
-                left_pad = int(pad_amount * padding_percent)
-
-                x1 = x1 * fixed_ratio_components.resize_width + left_pad
-                w = w * fixed_ratio_components.resize_width
-                if x1 + w > self.expected_image_size.width:
-                    w = self.expected_image_size.width - x1
-
-                y1 = y1 * fixed_ratio_components.resize_height
-                h = h * fixed_ratio_components.resize_height
-            else:
-                raise ValueError("The pad_dimension should be 1 or 2")
-
-            x1 = int(x1)
-            y1 = int(y1)
-            w = int(w)
-            h = int(h)
-
-            x2 = (
-                x1 + w
-                if x1 + w < self.expected_image_size.width
-                else self.expected_image_size.width
+            x1 = x1_norm * fixed_ratio_components.resize_width
+            y1 = y1_norm * fixed_ratio_components.resize_height
+            w = w_norm * fixed_ratio_components.resize_width
+            h = h_norm * fixed_ratio_components.resize_height
+            x1, y1, x2, y2 = self.map_bbox_to_padded_image(
+                x1, y1, w, h, fixed_ratio_components, padding_percent
             )
-            y2 = (
-                y1 + h
-                if y1 + h < self.expected_image_size.height
-                else self.expected_image_size.height
-            )
-            bbox_ = [
+            new_bbox_norm = [
                 x1 / self.expected_image_size.width,
                 y1 / self.expected_image_size.height,
                 x2 / self.expected_image_size.width,
                 y2 / self.expected_image_size.height,
             ]
             vector = self._create_object_vector(
-                bbox_, category, self.expected_image_size.width
+                new_bbox_norm, category, self.expected_image_size.width
             )
 
             vectors_for_output.append((vector, area))
@@ -448,7 +407,6 @@ class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
         sorted_vectors_for_output = sorted(vectors_for_output, key=lambda x: x[1])
         for i, (vector, area) in enumerate(sorted_vectors_for_output):
             output_tensor_bboxes[i, :] = vector
-
         return torch.stack([output_tensor_n_objects, output_tensor_bboxes])
 
     def decode_output_tensor(
@@ -457,18 +415,19 @@ class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
         """
         y: torch.Tensor --> Stack [output_tensor_n_objects, output_tensor_bboxes]
         """
-        _, _, vector_size = y.shape
+        # Separate the two tensors
         n_objects_vector = y[0, 0, :]
-        n_objects = torch.argmax(n_objects_vector)
+        objects = y[1, : self.TOTAL_POSSIBLE_OBJECTS, :]
+
+        # Extract number of objects
+
+        n_objects = min(torch.argmax(n_objects_vector), self.TOTAL_POSSIBLE_OBJECTS)
         if n_objects == 0:
             return [], [], []
 
-        bbox_vector_size = vector_size - 80
-        _coord_step = bbox_vector_size // 4
-
-        objects = y[1, : self.TOTAL_POSSIBLE_OBJECTS, :]
-        h, w = y.shape[0], y.shape[1]
-
+        # Extract bboxes
+        _coord_step = self.bbox_vector_size // 4
+        h, w = y.shape[1], y.shape[2]
         bboxes = []
         categories = []
         objectness_scores = []
@@ -476,27 +435,49 @@ class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
             objectness_score = o[-1]
             if filter_by_objectness_score and objectness_score < 0.5:
                 continue
-            bbox_raw = o[: (len(o) - 80)]
-            x1 = self._decode_coordinate_vector(bbox_raw[:_coord_step], w)
-            y1 = self._decode_coordinate_vector(
+            total_classes = len(self.classes)
+            vector_size = len(o)
+            idx_bbox = vector_size - (total_classes + 1)
+            bbox_raw = o[:idx_bbox]
+            xc = self._decode_coordinate_vector(bbox_raw[:_coord_step], w)
+            yc = self._decode_coordinate_vector(
                 bbox_raw[_coord_step : 2 * _coord_step], h
             )
-            x2 = self._decode_coordinate_vector(
+            w0 = self._decode_coordinate_vector(
                 bbox_raw[2 * _coord_step : 3 * _coord_step], w
             )
-            y2 = self._decode_coordinate_vector(
+            h0 = self._decode_coordinate_vector(
                 bbox_raw[3 * _coord_step : 4 * _coord_step], h
             )
 
-            if all(x == 0 for x in [x1, y1, x2, y2]):
+            if all(x == 0 for x in [xc, yc, w, h]):
                 continue
+
+            # Center x, y and width, height to x1, y1, x2, y2
+            x1 = int(xc - w0 / 2)
+            y1 = int(yc - h0 / 2)
+            x2 = int(xc + w0 / 2)
+            y2 = int(yc + h0 / 2)
+
             bbox = [x1, y1, x2, y2]
-            category = torch.argmax(o[(len(o) - 80) :])
+            idx_category = idx_bbox + total_classes
+            category = torch.argmax(o[idx_bbox:idx_category])
             bboxes.append(bbox)
             categories.append(category)
             objectness_scores.append(objectness_score)
 
         return bboxes[:n_objects], categories[:n_objects], objectness_scores[:n_objects]
+
+
+class COCOInstances2017Ordinal3(BaseCOCOInstances2017Ordinal):
+
+    MOSAIC_SIZE = 4
+
+    def __init__(self, data_dir, split, expected_image_size):
+        super().__init__(data_dir, split, expected_image_size)
+
+    def get_output_tensor(self):
+        pass
 
 
 def write_image_with_output(

@@ -40,6 +40,6 @@ class MyLRScheduler:
                     if param_group["lr"] < 0.000001:
                         param_group["lr"] = self.param_groups_initial_lrs[i]
                     self.logger.info(
-                        f"Updating 'lr' for param_group-{i} from '{temp:.6f}' to {param_group['lr']} "
+                        f"Updating 'lr' for param_group-{i} from '{temp:.7f}' to {param_group['lr']:.7f} "
                     )
             self._reset_moving_average()

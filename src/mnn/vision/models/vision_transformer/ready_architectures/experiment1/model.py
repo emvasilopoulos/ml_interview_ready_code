@@ -153,21 +153,24 @@ class VitObjectDetectionNetwork2(torch.nn.Module):
         self.epoch = 0
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_mean_ch = x.mean(dim=1)
+        # x_mean_ch = x.mean(dim=1)
         x0 = self.rgb_combinator(x)
-        x_ = self.layer_norm0(x0 + x_mean_ch)  # Residual
+        # x_ = self.layer_norm0(x0 + x_mean_ch)  # Residual
 
-        x1 = self.hidden_transformer0(x_.permute(0, 2, 1))
-        x1 = x1.permute(0, 2, 1)
-        x_ = self.layer_norm1(x_ + x0 + x1)  # Residual
+        x1 = self.hidden_transformer0(x0)
+        # x1 = x1.permute(0, 2, 1)
+        # x_ = self.layer_norm1(x_ + x0 + x1)  # Residual
 
-        x2_1 = self.hidden_transformer_1_1(x_)
-        x_1 = self.layer_norm2(x_ + x0 + x1 + x2_1)  # Residual - Output 1
+        # x2_1 = self.hidden_transformer_1_1(x_)
+        x2_1 = self.hidden_transformer_1_1(x1)
+        # x_1 = self.layer_norm2(x_ + x0 + x1 + x2_1)  # Residual - Output 1
 
-        x2_2 = self.hidden_transformer_1_2(x_)
-        x_2 = self.layer_norm2(x_ + x0 + x1 + x2_2)  # Residual - Output 2
+        # x2_2 = self.hidden_transformer_1_2(x_)
+        x2_2 = self.hidden_transformer_1_2(x1)
+        # x_2 = self.layer_norm2(x_ + x0 + x1 + x2_2)  # Residual - Output 2
 
-        return self.head_activation(x_1), self.head_activation(x_2)
+        # return self.head_activation(x_1), self.head_activation(x_2)
+        return self.head_activation(x2_1), self.head_activation(x2_2)
 
     def state_dict(self, *args, **kwargs):
         # Get the regular state_dict

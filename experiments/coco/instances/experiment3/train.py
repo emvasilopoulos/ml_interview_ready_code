@@ -8,19 +8,17 @@ import torch
 import torch.utils.tensorboard
 import tqdm
 
+import mnn.logging
+from mnn.losses import FocalLoss
+from mnn.lr_scheduler import MyLRScheduler
+import mnn.torch_utils as mnn_utils
+from mnn.training_tools.parameters import get_params_grouped
 from mnn.vision.config import load_hyperparameters_config
-import mnn.vision.image_size
-import mnn.vision.dataset.coco.training.metrics as mnn_metrics
+import mnn.vision.config as mnn_config
 import mnn.vision.dataset.coco.experiments.detection_ordinal as mnn_ordinal
+import mnn.vision.image_size
 import mnn.vision.models.vision_transformer.ready_architectures.experiment1.model as mnn_vit_model
 import mnn.vision.models.vision_transformer.ready_architectures.experiment1.config as mnn_vit_config
-import mnn.logging
-from mnn.lr_scheduler import MyLRScheduler
-from mnn.losses import FocalLoss
-from mnn.training_tools.parameters import get_params_grouped
-import mnn.vision.config as mnn_config
-import mnn.torch_utils as mnn_utils
-import mnn.vision.dataset.coco.training.utils as mnn_coco_training_utils
 
 LOGGER = mnn.logging.get_logger(__name__)
 
@@ -30,8 +28,8 @@ def load_datasets(
     expected_image_size: mnn.vision.image_size.ImageSize,
     classes: Optional[List[int]] = None,
 ) -> Tuple[
-    mnn_ordinal.COCOInstances2017Ordinal,
-    mnn_ordinal.COCOInstances2017Ordinal,
+    mnn_ordinal.COCOInstances2017Ordinal2,
+    mnn_ordinal.COCOInstances2017Ordinal2,
 ]:
     train_dataset = mnn_ordinal.COCOInstances2017Ordinal2(
         dataset_dir,
@@ -67,12 +65,15 @@ def write_image_with_output_of_experiment3(
     validation_image: torch.Tensor,
     sub_dir: str = "any",
 ):
-    validation_img = validation_image.squeeze(0).detach().cpu()
+    validation_img = validation_image.detach().cpu()
     validation_img = validation_img.permute(1, 2, 0)
     image = (validation_img.numpy() * 255).astype("uint8")
     image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
     for bbox, category, confidence in zip(bboxes, categories, confidence_scores):
+        if confidence <= 0.001:
+            continue
+
         x1, y1, x2, y2 = bbox
         cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
         cv2.putText(
@@ -90,6 +91,25 @@ def write_image_with_output_of_experiment3(
     os.makedirs(f"assessment_images/{sub_dir}", exist_ok=True)
     cv2.imwrite(f"assessment_images/{sub_dir}/bboxed_image.jpg", image)
 
+def calculate_loss(output0, target0, output1, target1, loss_fn):
+    # We only care about the first vector from output0
+    pred_n_objects = output0[:, 0, :]
+    target_n_objects = target0[:, 0, :]
+    loss1 = loss_fn(pred_n_objects, target_n_objects)
+    # The rest should all be zeros
+    pred_n_objects_rest = output0[:, 1:, :]
+    target_n_objects_rest = target0[:, 1:, :]
+    loss1_rest = loss_fn(pred_n_objects_rest, target_n_objects_rest)
+    total_loss = loss1 + loss1_rest
+
+    # Compute loss for each bounding box
+    for i in range(output1.shape[1]):
+        pred_bboxes = output1[:, i, :]
+        target_bboxes = target1[:, i, :]
+        total_loss += loss_fn(pred_bboxes, target_bboxes)
+    # And then all bounding boxes together
+    total_loss += loss_fn(output1, target1)
+    return total_loss
 
 def train_one_epoch(
     train_loader: torch.utils.data.DataLoader,
@@ -98,8 +118,8 @@ def train_one_epoch(
     loss_fn: torch.nn.Module,
     hyperparameters_config: mnn_config.HyperparametersConfiguration,
     current_epoch: int,
+    validation_image_unsqueezed: torch.Tensor,
     device: torch.device = torch.device("cpu"),
-    validation_image_path: pathlib.Path = None,
     writer: torch.utils.tensorboard.SummaryWriter = None,
     log_rate: int = 1000,
     model_save_path: pathlib.Path = pathlib.Path("my_vit_object_detection.pth"),
@@ -109,10 +129,6 @@ def train_one_epoch(
     model.train()  # important for batch normalization and dropout layers
     running_loss = 0
     running_iou_05 = 0
-
-    validation_image = mnn_coco_training_utils.prepare_validation_image(
-        validation_image_path, model.expected_image_size
-    ).to(device, dtype=hyperparameters_config.floating_point_precision)
 
     val_counter = 0
     tqdm_obj = tqdm.tqdm(train_loader, desc="Training | Loss: 0 | IoU-0.5: 0")
@@ -131,7 +147,7 @@ def train_one_epoch(
             dtype=hyperparameters_config.floating_point_precision,
             non_blocking=True,  # Requires data loader use flag 'pin_memory=True'
         )
-        target1 = target0.to(
+        target1 = target1.to(
             device=device,
             dtype=hyperparameters_config.floating_point_precision,
             non_blocking=True,  # Requires data loader use flag 'pin_memory=True'
@@ -143,36 +159,34 @@ def train_one_epoch(
         # Forward pass
         output0, output1 = model(image_batch)
 
-        # Compute the loss and its gradients
-        loss1 = loss_fn(output0, target0)
-        loss2 = loss_fn(output1, target1)
-        loss = loss1 + loss2
-        loss.backward()
+        total_loss = calculate_loss(output0, target0, output1, target1, loss_fn)
+        total_loss.backward()
 
         if scheduler is not None:
-            scheduler.add_batch_loss(loss)
+            scheduler.add_batch_loss(total_loss)
         # Adjust learning weights
         optimizer.step()
 
         # Calculate IoU
         temp = 0
-        for o0, o1 in zip(output0, output1):
-            output = torch.stack([o0, o1], dim=0)
-            pred_bboxes, _, _ = train_loader.dataset.decode_output_tensor(output)
-            target_bboxes, _, _ = train_loader.dataset.decode_output_tensor(output)
-            temp += (
-                mnn_metrics.calculate_iou_bbox_batch(
-                    torch.Tensor(pred_bboxes),
-                    torch.Tensor(target_bboxes),
-                )
-                .mean()
-                .item()
-            )
+        # for t, o0, o1 in zip(target, output0, output1):
+        #     output = torch.stack([o0, o1], dim=0)
+        #     pred_bboxes, _, _ = train_loader.dataset.decode_output_tensor(output)
+        #     target_bboxes, _, _ = train_loader.dataset.decode_output_tensor(t)
+        #     # temp += (
+        #     #     mnn_metrics.calculate_iou_bbox_batch(
+        #     #         torch.Tensor(pred_bboxes),
+        #     #         torch.Tensor(target_bboxes),
+        #     #     )
+        #     #     .mean()
+        #     #     .item()
+        #     # )
+        #     temp += 0
         current_iou_05 = temp / len(output0)
 
         # Log metrics
         training_step = i + current_epoch * len(train_loader)
-        current_loss = loss.item()
+        current_loss = total_loss.item()
         tqdm_obj.set_description(
             f"Training | Loss: {current_loss:.4f} | IoU-0.5: {current_iou_05:.4f}"
         )
@@ -197,21 +211,43 @@ def train_one_epoch(
             running_loss = 0
             running_iou_05 = 0
 
-            # Store validation image to inspect the model's performance
-            temp_out0, temp_out1 = model(validation_image)
+            #### val image
+            temp_out0, temp_out1 = model(validation_image_unsqueezed)
             temp_output = torch.stack(
                 [temp_out0.squeeze(0), temp_out1.squeeze(0)], dim=0
             )
             pred_bboxes, pred_categories, pred_objectnesses = (
                 train_loader.dataset.decode_output_tensor(temp_output)
             )
-
             write_image_with_output_of_experiment3(
                 pred_bboxes,
                 pred_categories,
                 pred_objectnesses,
-                validation_image,
+                validation_image_unsqueezed.squeeze(0),
                 "validation_image_prediction",
+            )
+            #### train image
+            target_bboxes, target_categories, target_objectnesses = (
+                train_loader.dataset.decode_output_tensor(target[0])
+            )
+            write_image_with_output_of_experiment3(
+                target_bboxes,
+                target_categories,
+                target_objectnesses,
+                image_batch[0],
+                "train_image_target",
+            )
+            p_bboxes, p_categories, p_objectnesses = (
+                train_loader.dataset.decode_output_tensor(
+                    torch.stack([output0[0], output1[0]], dim=0)
+                )
+            )
+            write_image_with_output_of_experiment3(
+                p_bboxes,
+                p_categories,
+                p_objectnesses,
+                image_batch[0],
+                "train_image_prediction",
             )
 
             val_counter += 1
@@ -242,13 +278,13 @@ def val_once(
             )
             # Prepare outputs targets
             target0 = target[:, 0]  # Number of objects
-            target1 = target1[:, 1]  # Bounding boxes
+            target1 = target[:, 1]  # Bounding boxes
             target0 = target0.to(
                 device=device,
                 dtype=hyperparameters_config.floating_point_precision,
                 non_blocking=True,  # Requires data loader use flag 'pin_memory=True'
             )
-            target1 = target0.to(
+            target1 = target1.to(
                 device=device,
                 dtype=hyperparameters_config.floating_point_precision,
                 non_blocking=True,  # Requires data loader use flag 'pin_memory=True'
@@ -256,35 +292,30 @@ def val_once(
 
             # Forward pass
             output0, output1 = model(image_batch)
-
-            # Compute the loss and its gradients
-            loss1 = loss_fn(output0, target0)
-            loss2 = loss_fn(output1, target1)
-            loss = loss1 + loss2
-            loss.backward()
+            total_loss = calculate_loss(output0, target0, output1, target1, loss_fn)
 
             # Calculate IoU
             temp = 0
-            for o0, o1 in zip(output0, output1):
-                output = torch.stack([output0, output1], dim=0)
-                pred_bboxes, _, _ = val_loader.dataset.decode_output_tensor(output)
-                target_bboxes, _, _ = val_loader.dataset.decode_output_tensor(output)
-                temp += (
-                    mnn_metrics.calculate_iou_bbox_batch(
-                        torch.Tensor(pred_bboxes),
-                        torch.Tensor(target_bboxes),
-                        threshold=0.5,
-                    )
-                    .mean()
-                    .item()
-                )
+            # for t, o0, o1 in zip(target, output0, output1):
+            #     output = torch.stack([o0, o1], dim=0)
+            #     pred_bboxes, _, _ = val_loader.dataset.decode_output_tensor(output)
+            #     target_bboxes, _, _ = val_loader.dataset.decode_output_tensor(t)
+            #     temp += (
+            #         mnn_metrics.calculate_iou_bbox_batch(
+            #             torch.Tensor(pred_bboxes),
+            #             torch.Tensor(target_bboxes),
+            #         )
+            #         .mean()
+            #         .item()
+            #     )
+            #     temp += 0
             current_iou_05 = temp / len(output0)
 
             # Log metrics
             validation_step = i + current_epoch * len(val_loader)
-            current_loss = loss.item()
+            current_loss = total_loss.item()
             tqdm_obj.set_description(
-                f"Training | Loss: {current_loss:.4f} | IoU-0.5: {current_iou_05:.4f}"
+                f"Validation | Loss: {current_loss:.4f} | IoU-0.5: {current_iou_05:.4f}"
             )
             if writer is not None:
                 writer.add_scalar("Loss/val", current_loss, validation_step)
@@ -311,7 +342,6 @@ def train_val(
     hyperparameters_config: mnn_config.HyperparametersConfiguration,
     writer: torch.utils.tensorboard.SummaryWriter,
     experiment: str,
-    validation_image_path: pathlib.Path,
     log_rate: int = 50,
     save_dir: pathlib.Path = pathlib.Path("trained_models"),
 ):
@@ -327,10 +357,22 @@ def train_val(
         device = torch.device("cpu")
 
     # Prepare validation image
-    validation_image = mnn_coco_training_utils.prepare_validation_image(
-        validation_image_path, object_detection_model.expected_image_size
-    ).to(device, dtype=hyperparameters_config.floating_point_precision)
-    output0, output1 = object_detection_model(validation_image)
+    validation_image, target = val_dataset[2]
+    validation_image_unsqueezed = validation_image.to(
+        device, dtype=hyperparameters_config.floating_point_precision
+    ).unsqueeze(0)
+    target_bboxes, target_categories, target_confidences = (
+        train_dataset.decode_output_tensor(target)
+    )
+    write_image_with_output_of_experiment3(
+        target_bboxes,
+        target_categories,
+        target_confidences,
+        validation_image_unsqueezed.squeeze(0),
+        "validation_image_gt",
+    )
+
+    output0, output1 = object_detection_model(validation_image_unsqueezed)
     pred_bboxes, pred_categories, pred_confidences = train_dataset.decode_output_tensor(
         torch.stack([output0.squeeze(0), output1.squeeze(0)], dim=0)
     )
@@ -338,10 +380,9 @@ def train_val(
         pred_bboxes,
         pred_categories,
         pred_confidences,
-        validation_image,
+        validation_image_unsqueezed.squeeze(0),
         "pre-session_prediction",
     )
-
     # Prepare data loaders
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -367,7 +408,6 @@ def train_val(
 
     for epoch in range(hyperparameters_config.epochs):
         LOGGER.info(f"---------- EPOCH-{epoch} ------------")
-        # LOGGER.info(f"Scheduler State:\n{scheduler.state_dict()}")
         train_one_epoch(
             train_loader,
             object_detection_model,
@@ -375,17 +415,13 @@ def train_val(
             loss_fn,
             hyperparameters_config,
             epoch,
+            validation_image_unsqueezed=validation_image_unsqueezed,
             device=device,
-            validation_image_path=validation_image_path,
             writer=writer,
             log_rate=log_rate,
             model_save_path=model_between_epoch_save_path,
             scheduler=scheduler,  # TODO MAKE TYPES RIGHT
         )
-
-        model_state = object_detection_model.state_dict()
-        model_state["epoch"] = epoch
-        torch.save(model_state, model_save_path)
         val_once(
             val_loader,
             object_detection_model,
@@ -396,6 +432,10 @@ def train_val(
             writer=writer,
             log_rate=log_rate,
         )
+
+        model_state = object_detection_model.state_dict()
+        model_state["epoch"] = epoch
+        torch.save(model_state, model_save_path)
 
 
 if __name__ == "__main__":
@@ -427,9 +467,6 @@ if __name__ == "__main__":
     if args.existing_model_path is not None:
         existing_model_path = pathlib.Path(args.existing_model_path)
         LOGGER.info(f"Existing model: {args.existing_model_path}")
-        raise NotImplementedError(
-            "Continueing training not supported yet. Something to do with scheduler"
-        )
     else:
         existing_model_path = None
     model = load_model(model_config_path, existing_model_path)
@@ -466,13 +503,10 @@ if __name__ == "__main__":
     scheduler = MyLRScheduler(optimizer)
 
     # Tensorboard
-    LOGGER.info("tesnorboard summary writer. Open with: \ntensorboard --logdir=runs")
+    LOGGER.info("tensorboard summary writer. Open with: \ntensorboard --logdir=runs")
     writer = torch.utils.tensorboard.SummaryWriter(
         log_dir=f"runs/coco_my_vit_predictions"
     )
-
-    # Validation Image
-    validation_image_path = dataset_dir / "val2017" / "000000000139.jpg"
 
     LOGGER.info("------ TRAIN & VAL ------")
     # Train & Validate session
@@ -486,5 +520,4 @@ if __name__ == "__main__":
         hyperparameters_config=hyperparameters_config,
         writer=writer,
         experiment="experiment3",
-        validation_image_path=validation_image_path,
     )
