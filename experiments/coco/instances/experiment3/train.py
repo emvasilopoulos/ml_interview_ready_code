@@ -91,6 +91,7 @@ def write_image_with_output_of_experiment3(
     os.makedirs(f"assessment_images/{sub_dir}", exist_ok=True)
     cv2.imwrite(f"assessment_images/{sub_dir}/bboxed_image.jpg", image)
 
+
 def calculate_loss(output0, target0, output1, target1, loss_fn):
     # We only care about the first vector from output0
     pred_n_objects = output0[:, 0, :]
@@ -110,6 +111,7 @@ def calculate_loss(output0, target0, output1, target1, loss_fn):
     # And then all bounding boxes together
     total_loss += loss_fn(output1, target1)
     return total_loss
+
 
 def train_one_epoch(
     train_loader: torch.utils.data.DataLoader,

@@ -10,13 +10,12 @@ import mnn.logging
 
 LOGGER = mnn.logging.get_logger(__name__, loglevel=logging.INFO)
 
+
 class TestCOCOInstances2017Ordinal(unittest.TestCase):
 
     def setUp(self) -> None:
 
-        dataset_dir = pathlib.Path(
-            "/home/manos/ml_interview_ready_code/data/"
-        )
+        dataset_dir = pathlib.Path("/home/manos/ml_interview_ready_code/data/")
 
         self.expected_image_sizeW = mnn.vision.image_size.ImageSize(480, 640)
         self.datasetW = mnn_detection_ordinal.COCOInstances2017Ordinal(
@@ -96,7 +95,9 @@ class TestCOCOInstances2017Ordinal(unittest.TestCase):
         self._test_expand_left_right(self.datasetH)
         self._test_expand_left_right(self.datasetSq)
 
-    def _test_create_object_vector(self, dataset: mnn_detection_ordinal.COCOInstances2017Ordinal):
+    def _test_create_object_vector(
+        self, dataset: mnn_detection_ordinal.COCOInstances2017Ordinal
+    ):
         x1 = 0
         y1 = 0
         x2 = 0.1
@@ -104,7 +105,11 @@ class TestCOCOInstances2017Ordinal(unittest.TestCase):
 
         category = 0
 
-        vector, is_big_enough = dataset._create_object_vector(bbox=[x1, y1, x2, y2], category=category, vector_size=dataset.expected_image_size.width)
+        vector, is_big_enough = dataset._create_object_vector(
+            bbox=[x1, y1, x2, y2],
+            category=category,
+            vector_size=dataset.expected_image_size.width,
+        )
         s = dataset.bbox_vector_size // 4
         # x1
         self.assertEqual(vector[0], 1)
@@ -162,14 +167,15 @@ class TestCOCOInstances2017Ordinal(unittest.TestCase):
         # Objectness
         self.assertEqual(vector[dataset.bbox_vector_size + len(dataset.classes)], 0.25)
 
-
     def test_create_object_vector(self):
         LOGGER.info("test_create_object_vector")
         self._test_create_object_vector(self.datasetH)
         self._test_create_object_vector(self.datasetW)
         self._test_create_object_vector(self.datasetSq)
 
-    def _test_create_number_of_objects_vector(self, dataset: mnn_detection_ordinal.COCOInstances2017Ordinal):
+    def _test_create_number_of_objects_vector(
+        self, dataset: mnn_detection_ordinal.COCOInstances2017Ordinal
+    ):
         n_objects = 0
         vector = dataset._create_number_of_objects_vector(
             n_objects, dataset.vector_size
@@ -183,10 +189,10 @@ class TestCOCOInstances2017Ordinal(unittest.TestCase):
         vector = dataset._create_number_of_objects_vector(
             n_objects, dataset.vector_size
         )
-        self.assertEqual(vector[dataset.vector_size-4], 0.25)
-        self.assertEqual(vector[dataset.vector_size-3], 0.5)
-        self.assertEqual(vector[dataset.vector_size-2], 0.75)
-        self.assertEqual(vector[dataset.vector_size-1], 1)
+        self.assertEqual(vector[dataset.vector_size - 4], 0.25)
+        self.assertEqual(vector[dataset.vector_size - 3], 0.5)
+        self.assertEqual(vector[dataset.vector_size - 2], 0.75)
+        self.assertEqual(vector[dataset.vector_size - 1], 1)
 
         n_objects = 10
         vector = dataset._create_number_of_objects_vector(
@@ -207,7 +213,6 @@ class TestCOCOInstances2017Ordinal(unittest.TestCase):
         self._test_create_number_of_objects_vector(self.datasetH)
         self._test_create_number_of_objects_vector(self.datasetW)
         self._test_create_number_of_objects_vector(self.datasetSq)
-
 
 
 if __name__ == "__main__":

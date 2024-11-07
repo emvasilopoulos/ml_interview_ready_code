@@ -4,7 +4,6 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 from mnn.vision.image_size import ImageSize
-import mnn.vision.process_input.dimensions.resize_fixed_ratio as mnn_resize_fixed_ratio
 
 
 def _random_percentage(base=0.1):
@@ -31,7 +30,6 @@ def calculate_image_height(df):
 
 
 import argparse
-import os
 
 HEADER = [
     "id",

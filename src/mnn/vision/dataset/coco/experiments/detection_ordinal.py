@@ -22,13 +22,22 @@ from typing import Any, Dict, Optional
 import torch
 import cv2
 
-from mnn.vision.dataset.coco.torch_dataset import COCODatasetInstances2017
+from mnn.vision.dataset.coco.torch_dataset_csv import BaseCOCODatasetGroupedCsv
 import mnn.vision.process_input.dimensions.resize_fixed_ratio as mnn_resize_fixed_ratio
 import mnn.vision.image_size
 
 import mnn.logging
 
 LOGGER = mnn.logging.get_logger(__name__)
+
+
+class COCODatasetInstances2017(BaseCOCODatasetGroupedCsv):
+
+    def get_year(self) -> int:
+        return "2017"
+
+    def get_type(self) -> str:
+        return "instances"
 
 
 class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
@@ -173,7 +182,7 @@ class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
 
     def map_bbox_to_padded_image(
         self,
-        x1: float,
+        x1: float,  # TODO - there's a bug in the preparation of CSVs and the x1, y1 are probably xc, yc
         y1: float,
         w: float,
         h: float,
@@ -189,17 +198,11 @@ class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
         else:
             raise ValueError("The pad_dimension should be 1 or 2")
 
-        x2 = (
-            x1 + w
-            if x1 + w < self.expected_image_size.width
-            else self.expected_image_size.width
-        )
-        y2 = (
-            y1 + h
-            if y1 + h < self.expected_image_size.height
-            else self.expected_image_size.height
-        )
-        return x1, y1, x2, y2
+        if x1 + w > fixed_ratio_components.resize_width:
+            w = fixed_ratio_components.resize_width - x1
+        if y1 + h > fixed_ratio_components.resize_height:
+            h = fixed_ratio_components.resize_height - y1
+        return x1, y1, w, h
 
 
 class COCOInstances2017Ordinal(BaseCOCOInstances2017Ordinal):
@@ -254,14 +257,14 @@ class COCOInstances2017Ordinal(BaseCOCOInstances2017Ordinal):
             y1 = y1_norm * fixed_ratio_components.resize_height
             w = w_norm * fixed_ratio_components.resize_width
             h = h_norm * fixed_ratio_components.resize_height
-            x1, x2, y1, y2 = self.map_bbox_to_padded_image(
+            x1, y1, w, h = self.map_bbox_to_padded_image(
                 x1, y1, w, h, fixed_ratio_components, padding_percent
             )
             new_bbox_norm = [
                 x1 / self.expected_image_size.width,
                 y1 / self.expected_image_size.height,
-                x2 / self.expected_image_size.width,
-                y2 / self.expected_image_size.height,
+                w / self.expected_image_size.width,
+                h / self.expected_image_size.height,
             ]
             vector = self._create_object_vector(
                 new_bbox_norm, category, self.expected_image_size.width

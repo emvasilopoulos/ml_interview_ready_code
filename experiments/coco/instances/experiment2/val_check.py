@@ -19,7 +19,7 @@ def load_dataset(
     dataset_dir: pathlib.Path,
     expected_image_size: mnn.vision.image_size.ImageSize,
     classes: Optional[List[int]] = None,
-) ->mnn_ordinal.COCOInstances2017Ordinal:
+) -> mnn_ordinal.COCOInstances2017Ordinal:
     val_dataset = mnn_ordinal.COCOInstances2017Ordinal(
         dataset_dir, "val", expected_image_size
     )
@@ -31,7 +31,9 @@ def load_model(
 ) -> mnn_vit_model.VitObjectDetectionNetwork:
     model_config, _, head_config = mnn_vit_config.load_model_config(config_path)
     model = mnn_vit_model.VitObjectDetectionNetwork(
-        model_config=model_config, head_config=head_config, head_activation=torch.nn.Sigmoid()
+        model_config=model_config,
+        head_config=head_config,
+        head_activation=torch.nn.Sigmoid(),
     )
     state_dict = model.state_dict()
     if existing_model_path:
@@ -83,7 +85,9 @@ if __name__ == "__main__":
     image, target = val_dataset[0]
     image = image.to(device=device)
     predictions = output = model(image.unsqueeze(0))
-    bboxes, categories, confidence_scores = mnn_ordinal.decode_output_tensor(predictions.squeeze(0), filter_by_objectness_score=False)
+    bboxes, categories, confidence_scores = mnn_ordinal.decode_output_tensor(
+        predictions.squeeze(0), filter_by_objectness_score=False
+    )
     mnn_train_utils.write_image_with_output_of_experiment2(
         predictions, image, "prediction"
     )

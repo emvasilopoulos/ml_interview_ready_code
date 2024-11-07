@@ -2,7 +2,7 @@ from typing import Any, Dict, Optional
 
 import torch
 
-from mnn.vision.dataset.coco.torch_dataset import COCODatasetInstances2017
+from mnn.vision.dataset.coco.torch_dataset_json import COCODatasetInstances2017
 import mnn.vision.process_input.dimensions.pad as mnn_pad
 import mnn.vision.process_input.dimensions.resize_fixed_ratio as mnn_resize_fixed_ratio
 

@@ -72,10 +72,10 @@ class Counter:
 
 
 def modify_group(group):
-    start_x_percentage = random.uniform(0.10, 0.43)
-    start_y_percentage = random.uniform(0.10, 0.43)
-    end_x_percentage = random.uniform(0.57, 0.9)
-    end_y_percentage = random.uniform(0.57, 0.9)
+    start_x_percentage = random.uniform(0.26, 0.39)
+    start_y_percentage = random.uniform(0.26, 0.39)
+    end_x_percentage = random.uniform(0.75, 0.88)
+    end_y_percentage = random.uniform(0.75, 0.88)
     group[
         [
             "start_x.crop",

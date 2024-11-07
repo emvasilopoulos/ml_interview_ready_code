@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from mnn.vision.image_size import ImageSize
-from mnn.vision.dataset.coco.torch_dataset import COCODatasetInstances2017
+from mnn.vision.dataset.coco.torch_dataset_json import COCODatasetInstances2017
 
 
 def image_name_from_coco_image_id(image_id: int) -> str:

@@ -43,11 +43,14 @@ def load_model(
 ) -> mnn_vit_model.VitObjectDetectionNetwork:
     model_config, _, head_config = mnn_vit_config.load_model_config(config_path)
     model = mnn_vit_model.VitObjectDetectionNetwork(
-        model_config=model_config, head_config=head_config, head_activation=torch.nn.Sigmoid()
+        model_config=model_config,
+        head_config=head_config,
+        head_activation=torch.nn.Sigmoid(),
     )
     if existing_model_path:
         model.load_state_dict(torch.load(existing_model_path))
     return model
+
 
 class FocalLoss(torch.nn.Module):
     def __init__(self, alpha: float = 0.25, gamma: float = 1.5):
@@ -69,6 +72,7 @@ class FocalLoss(torch.nn.Module):
 
         return loss.mean(1).sum()
 
+
 # Copied from ultralytics
 def get_params_grouped(model: torch.nn.Module):
     bn = tuple(v for k, v in torch.nn.__dict__.items() if "Norm" in k)
@@ -84,7 +88,10 @@ def get_params_grouped(model: torch.nn.Module):
                 parameters_grouped[0].append(param)
     return parameters_grouped
 
+
 import collections
+
+
 class MyLRScheduler:
 
     def __init__(self, optimizer: torch.optim.Optimizer):
@@ -118,8 +125,11 @@ class MyLRScheduler:
                     param_group["lr"] *= 0.9
                     if param_group["lr"] < 0.000001:
                         param_group["lr"] = self.param_groups_initial_lrs[i]
-                    self.logger.info(f"Updating 'lr' for param_group-{i} from '{temp:.6f}' to {param_group['lr']} ")
+                    self.logger.info(
+                        f"Updating 'lr' for param_group-{i} from '{temp:.6f}' to {param_group['lr']} "
+                    )
             self._reset_moving_average()
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -150,7 +160,9 @@ if __name__ == "__main__":
     if args.existing_model_path is not None:
         existing_model_path = pathlib.Path(args.existing_model_path)
         LOGGER.info(f"Existing model: {args.existing_model_path}")
-        raise NotImplementedError("Continueing training not supported yet. Something to do with scheduler")
+        raise NotImplementedError(
+            "Continueing training not supported yet. Something to do with scheduler"
+        )
     else:
         existing_model_path = None
     model = load_model(model_config_path, existing_model_path)
@@ -178,7 +190,9 @@ if __name__ == "__main__":
     lr = hyperparameters_config.learning_rate
     momentum = 0.937
     decay = 0.001
-    optimizer = torch.optim.Adam(parameters_grouped[2], lr=lr, betas=(momentum, 0.999), weight_decay=0.0)
+    optimizer = torch.optim.Adam(
+        parameters_grouped[2], lr=lr, betas=(momentum, 0.999), weight_decay=0.0
+    )
     optimizer.add_param_group({"params": parameters_grouped[0], "weight_decay": decay})
     optimizer.add_param_group({"params": parameters_grouped[1], "weight_decay": 0.0})
 

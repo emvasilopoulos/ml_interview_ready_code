@@ -1,8 +1,8 @@
 import abc
 import random
 from typing import Any, Dict, List, Optional, Tuple
-import json
 import pathlib
+
 
 import torch
 
@@ -21,39 +21,6 @@ import mnn.logging
 LOGGER = mnn.logging.get_logger(__name__)
 
 
-class RawCOCOAnnotationsParser:
-
-    def __init__(self, annotations_path: pathlib.Path):
-        self.annotations_path = annotations_path
-        self.objects_by_image_id: Dict[str, List[Any]] = {}
-        self.data_to_store = {}
-
-    def parse_data(self):
-        self._load_json_data()
-        self.group_objects_by_image_id()
-        self.data_to_store["annotations_grouped_by_image_id"] = self.objects_by_image_id
-        self.data_to_store["images"] = self.images
-
-    def write_data(self, output_path: pathlib.Path):
-        with open(output_path, "w") as f:
-            json.dump(self.data_to_store, f)
-
-    def _load_json_data(self):
-        with open(self.annotations_path, "r") as f:
-            data = json.load(f)
-
-        self.images = data["images"]
-        self.annotations = data["annotations"]
-
-    def group_objects_by_image_id(self):
-        for annotation in self.annotations:
-            image_id = annotation["image_id"]
-            if image_id not in self.objects_by_image_id:
-                self.objects_by_image_id[image_id] = []
-            self.objects_by_image_id[image_id].append(annotation)
-        return self.objects_by_image_id
-
-
 class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
 
     @abc.abstractmethod
@@ -68,6 +35,20 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
         - instances
         - person_keypoints
         """
+        pass
+
+    @abc.abstractmethod
+    def get_pair(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        pass
+
+    @abc.abstractmethod
+    def _read_annotations(
+        self, annotations_dir: pathlib.Path, coco_type: str, split: str, year: str
+    ):
+        pass
+
+    @abc.abstractmethod
+    def _define_length(self) -> int:
         pass
 
     def __init__(
@@ -92,16 +73,8 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
         coco_type = self.get_type()
 
         self.images_dir = data_dir / f"{split}{year}"
-        self.annotations_path = (
-            data_dir
-            / "annotations"
-            / f"{coco_type}_{split}{year}_grouped_by_image_id.json"
-        )
+        annotations_dir = data_dir / "annotations"
 
-        self.images = None
-        self.annotations: Dict[str, Any] = None
-
-        self._load_json_data()
         self.desired_classes = classes
 
         self.input_pipeline = mnn.vision.process_input.pipeline.ProcessInputPipeline(
@@ -111,47 +84,20 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
             normalize=mnn.vision.process_input.normalize.basic.NORMALIZE,
         )
 
-    def _load_json_data(self):
-        with open(self.annotations_path, "r") as f:
-            data = json.load(f)
+        self._read_annotations(annotations_dir, coco_type, split, year)
 
-        self.images = data["images"]
-        self.annotations = data["annotations_grouped_by_image_id"]
+    def _image_file_name_from_id(self, image_id: int) -> str:
+        return f"{image_id:012}.jpg"
 
     def __len__(self) -> int:
-        return len(self.images)
-
-    def get_pair(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
-        # Get image and annotations
-        image_sample_i = self.images[idx]
-        filename = image_sample_i["file_name"]
-        sample_i_id = str(image_sample_i["id"])
-        annotations = self.annotations.get(sample_i_id, [])
-
-        self._current_sample = filename
-        # Read image as tensor
-        img_tensor = mnn.vision.process_input.reader.read_image_torchvision(
-            self.images_dir / filename
-        )
-        if img_tensor.shape[0] == 1:
-            img_tensor = img_tensor.repeat(3, 1, 1)
-        img_tensor = self.input_pipeline(img_tensor)
-        img_w = img_tensor.shape[2]
-        img_h = img_tensor.shape[1]
-
-        # Normalize bounding boxes
-        for annotation in annotations:
-            x1, y1, w, h = annotation["bbox"]
-            normalized_bbox = [x1 / img_w, y1 / img_h, w / img_w, h / img_h]
-            annotation["normalized_bbox"] = normalized_bbox
-        return img_tensor, annotations
+        return self._define_length()
 
     def _random_percentage(self):
         side = random.randint(0, 1)
         if side == 0:
-            return random.random() * 0.35
+            return random.random() * 0.14
         else:
-            return random.random() * 0.35 + 0.65
+            return random.random() * 0.14 + 0.86
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
         img_tensor, annotations = self.get_pair(idx)
@@ -170,7 +116,7 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
         )
 
         # Random padding that both input & output must know about
-        padding_percent = self.__random_percentage()
+        padding_percent = self._random_percentage()
         pad_value = random.random()
 
         # Prepare output based on expected image size & padding that will be applied in image
