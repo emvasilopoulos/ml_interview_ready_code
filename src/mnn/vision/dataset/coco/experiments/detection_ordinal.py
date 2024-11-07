@@ -47,6 +47,7 @@ class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
 
     ORDINAL_EXPANSION = 4
     TOTAL_POSSIBLE_OBJECTS = 98  # COCO has max 98 objects in one image
+    N_CLASSES = 79
 
     def __init__(
         self,
@@ -55,7 +56,7 @@ class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
         expected_image_size: mnn.vision.image_size.ImageSize,
     ):
         # 79 classes
-        self.classes = [i for i in range(79)]
+        self.classes = [i for i in range(self.N_CLASSES)]
         super().__init__(data_dir, split, expected_image_size, self.classes)
 
         self.bbox_vector_size = (
@@ -260,9 +261,11 @@ class COCOInstances2017Ordinal(BaseCOCOInstances2017Ordinal):
             x1, y1, w, h = self.map_bbox_to_padded_image(
                 x1, y1, w, h, fixed_ratio_components, padding_percent
             )
+            xc = x1 + w / 2
+            yc = y1 + h / 2
             new_bbox_norm = [
-                x1 / self.expected_image_size.width,
-                y1 / self.expected_image_size.height,
+                xc / self.expected_image_size.width,
+                yc / self.expected_image_size.height,
                 w / self.expected_image_size.width,
                 h / self.expected_image_size.height,
             ]
@@ -288,13 +291,13 @@ class COCOInstances2017Ordinal(BaseCOCOInstances2017Ordinal):
             # Unwanted behaviour by the model. Don't do anything. Keep it in mind.
             pass
 
-        bbox_vector_size = vector_size - 80
+        bbox_vector_size = vector_size - (self.N_CLASSES + 1)
         _coord_step = bbox_vector_size // 4
 
         objects = y[
             1 : self.TOTAL_POSSIBLE_OBJECTS + 1, :
         ]  # The rest should be ignored
-        h, w = y.shape[0], y.shape[1]
+        img_h, img_w = self.expected_image_size.height, self.expected_image_size.width
 
         bboxes = []
         categories = []
@@ -304,22 +307,22 @@ class COCOInstances2017Ordinal(BaseCOCOInstances2017Ordinal):
             if filter_by_objectness_score and objectness_score < 0.5:
                 continue
             bbox_raw = o[: (len(o) - 80)]
-            x1 = self._decode_coordinate_vector(bbox_raw[:_coord_step], w)
-            y1 = self._decode_coordinate_vector(
-                bbox_raw[_coord_step : 2 * _coord_step], h
+            xc = self._decode_coordinate_vector(bbox_raw[:_coord_step], img_w)
+            yc = self._decode_coordinate_vector(
+                bbox_raw[_coord_step : 2 * _coord_step], img_h
             )
-            x2 = self._decode_coordinate_vector(
-                bbox_raw[2 * _coord_step : 3 * _coord_step], w
+            w = self._decode_coordinate_vector(
+                bbox_raw[2 * _coord_step : 3 * _coord_step], img_w
             )
-            y2 = self._decode_coordinate_vector(
-                bbox_raw[3 * _coord_step : 4 * _coord_step], h
+            h = self._decode_coordinate_vector(
+                bbox_raw[3 * _coord_step : 4 * _coord_step], img_h
             )
 
-            if all(x == 0 for x in [x1, y1, x2, y2]):
+            bbox = [xc, yc, w, h]
+            if all(x == 0 for x in bbox):
                 continue
-            bbox = [x1, y1, x2, y2]
-            category = torch.argmax(o[(len(o) - 80) : -1])
             bboxes.append(bbox)
+            category = torch.argmax(o[(len(o) - 80) : -1])
             categories.append(category)
             objectness_scores.append(objectness_score)
 
@@ -394,12 +397,15 @@ class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
             x1, y1, w, h = self.map_bbox_to_padded_image(
                 x1, y1, w, h, fixed_ratio_components, padding_percent
             )
+            xc = x1 + w / 2
+            yc = y1 + h / 2
             new_bbox_norm = [
-                x1 / self.expected_image_size.width,
-                y1 / self.expected_image_size.height,
+                xc / self.expected_image_size.width,
+                yc / self.expected_image_size.height,
                 w / self.expected_image_size.width,
                 h / self.expected_image_size.height,
             ]
+
             vector = self._create_object_vector(
                 new_bbox_norm, category, self.expected_image_size.width
             )
@@ -430,11 +436,11 @@ class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
 
         # Extract bboxes
         _coord_step = self.bbox_vector_size // 4
-        h, w = y.shape[1], y.shape[2]
+        h, w = self.expected_image_size.height, self.expected_image_size.width
         bboxes = []
         categories = []
         objectness_scores = []
-        for o in objects:
+        for i, o in enumerate(objects):
             objectness_score = o[-1]
             if filter_by_objectness_score and objectness_score < 0.5:
                 continue
@@ -453,16 +459,10 @@ class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
                 bbox_raw[3 * _coord_step : 4 * _coord_step], h
             )
 
-            if all(x == 0 for x in [xc, yc, w, h]):
+            if all(x == 0 for x in [xc, yc, w0, h0]):
                 continue
 
-            # Center x, y and width, height to x1, y1, x2, y2
-            x1 = int(xc - w0 / 2)
-            y1 = int(yc - h0 / 2)
-            x2 = int(xc + w0 / 2)
-            y2 = int(yc + h0 / 2)
-
-            bbox = [x1, y1, x2, y2]
+            bbox = [xc, yc, w0, h0]
             idx_category = idx_bbox + total_classes
             category = torch.argmax(o[idx_bbox:idx_category])
             bboxes.append(bbox)

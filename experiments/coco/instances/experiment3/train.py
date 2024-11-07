@@ -68,17 +68,28 @@ def write_image_with_output_of_experiment3(
     validation_img = validation_image.detach().cpu()
     validation_img = validation_img.permute(1, 2, 0)
     image = (validation_img.numpy() * 255).astype("uint8")
-    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 
     for bbox, category, confidence in zip(bboxes, categories, confidence_scores):
         if confidence <= 0.001:
             continue
 
-        x1, y1, x2, y2 = bbox
+        xc, yc, w, h = bbox
+        x1 = int(xc - w / 2)
+        y1 = int(yc - h / 2)
+        x2 = x1 + int(w)
+        y2 = y1 + int(h)
         cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+        category_no = category.item()
+        cat = (
+            f"{category_no} - {confidence:.3f}"
+            if category_no < 1.0
+            else f"{category_no}"
+        )
         cv2.putText(
             image,
-            f"{category.item()} - {confidence:.3f}",
+            cat,
             (x1, y1),
             cv2.FONT_HERSHEY_SIMPLEX,
             1,
@@ -364,7 +375,7 @@ def train_val(
         device, dtype=hyperparameters_config.floating_point_precision
     ).unsqueeze(0)
     target_bboxes, target_categories, target_confidences = (
-        train_dataset.decode_output_tensor(target)
+        val_dataset.decode_output_tensor(target)
     )
     write_image_with_output_of_experiment3(
         target_bboxes,

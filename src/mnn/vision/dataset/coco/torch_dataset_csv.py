@@ -142,8 +142,33 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
         y1s = data_for_image["y1_norm.crop"].values
         ws = data_for_image["w_norm.crop"].values
         hs = data_for_image["h_norm.crop"].values
+
+        # Filter bboxes that are outside the crop
+        x1_list = []
+        y1_list = []
+        w_list = []
+        h_list = []
+        for i in range(len(x1s)):
+            x1 = x1s[i]
+            if x1 < 0 or x1 > 1:
+                continue
+            y1 = y1s[i]
+            if y1 < 0 or y1 > 1:
+                continue
+            w = ws[i]
+            if x1 + w > 1:
+                w = 1 - x1
+            h = hs[i]
+            if y1 + h > 1:
+                h = 1 - y1
+            x1_list.append(x1)
+            y1_list.append(y1)
+            w_list.append(w)
+            h_list.append(h)
+
+
         categories = data_for_image["category_id"].values
-        annotations = self._prepare_annotations(x1s, y1s, ws, hs, categories)
+        annotations = self._prepare_annotations(x1_list, y1_list, w_list, h_list, categories)
         return img_tensor, annotations
 
     def get_pair(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
