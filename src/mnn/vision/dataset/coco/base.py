@@ -86,6 +86,15 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
 
         self._read_annotations(annotations_dir, coco_type, split, year)
 
+    def _read_image(self, image_id: int) -> torch.Tensor:
+        filename = self._image_file_name_from_id(image_id)
+        img_tensor = mnn.vision.process_input.reader.read_image_torchvision(
+            self.images_dir / filename
+        )
+        if img_tensor.shape[0] == 1:
+            img_tensor = img_tensor.repeat(3, 1, 1)
+        return self.input_pipeline(img_tensor)
+
     def _image_file_name_from_id(self, image_id: int) -> str:
         return f"{image_id:012}.jpg"
 

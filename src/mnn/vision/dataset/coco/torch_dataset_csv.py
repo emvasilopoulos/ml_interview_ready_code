@@ -107,12 +107,7 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
         group = self.original_groups_indexed[idx]
         data_for_image = self.df_original_groups_by_image_id.get_group(group)
         image_id = data_for_image["image_id"].values[0]
-        filename = self._image_file_name_from_id(image_id)
-        img_tensor = mnn.vision.process_input.reader.read_image_torchvision(
-            self.images_dir / filename
-        )
-        if img_tensor.shape[0] == 1:
-            img_tensor = img_tensor.repeat(3, 1, 1)
+        img_tensor = self._read_image(image_id)
 
         x1s = data_for_image["x1_norm"].values
         y1s = data_for_image["y1_norm"].values
@@ -126,12 +121,8 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
         group = self.cropped_groups_indexed[idx]
         data_for_image = self.df_cropped_groups_by_image_id.get_group(group)
         image_id = data_for_image["image_id"].values[0]
-        filename = self._image_file_name_from_id(image_id)
-        img_tensor = mnn.vision.process_input.reader.read_image_torchvision(
-            self.images_dir / filename
-        )
-        if img_tensor.shape[0] == 1:
-            img_tensor = img_tensor.repeat(3, 1, 1)
+        img_tensor = self._read_image(image_id)
+
         x1 = int(data_for_image["start_x.crop"].values[0])
         y1 = int(data_for_image["start_y.crop"].values[0])
         x2 = int(data_for_image["end_x.crop"].values[0])
@@ -166,9 +157,10 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
             w_list.append(w)
             h_list.append(h)
 
-
         categories = data_for_image["category_id"].values
-        annotations = self._prepare_annotations(x1_list, y1_list, w_list, h_list, categories)
+        annotations = self._prepare_annotations(
+            x1_list, y1_list, w_list, h_list, categories
+        )
         return img_tensor, annotations
 
     def get_pair(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
