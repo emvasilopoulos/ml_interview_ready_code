@@ -68,7 +68,7 @@ def write_image_with_output_of_experiment3(
     validation_img = validation_image.detach().cpu()
     validation_img = validation_img.permute(1, 2, 0)
     image = (validation_img.numpy() * 255).astype("uint8")
-    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
     for bbox, category, confidence in zip(bboxes, categories, confidence_scores):
         if confidence <= 0.001:
