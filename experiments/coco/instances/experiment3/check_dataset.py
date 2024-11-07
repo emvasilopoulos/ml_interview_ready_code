@@ -1,4 +1,3 @@
-import argparse
 import os
 import pathlib
 from typing import List, Optional, Tuple
@@ -9,16 +8,8 @@ import torch.utils.tensorboard
 import tqdm
 
 import mnn.logging
-from mnn.losses import FocalLoss
-from mnn.lr_scheduler import MyLRScheduler
-import mnn.torch_utils as mnn_utils
-from mnn.training_tools.parameters import get_params_grouped
-from mnn.vision.config import load_hyperparameters_config
-import mnn.vision.config as mnn_config
 import mnn.vision.dataset.coco.experiments.detection_ordinal as mnn_ordinal
 import mnn.vision.image_size
-import mnn.vision.models.vision_transformer.ready_architectures.experiment1.model as mnn_vit_model
-import mnn.vision.models.vision_transformer.ready_architectures.experiment1.config as mnn_vit_config
 
 LOGGER = mnn.logging.get_logger(__name__)
 
@@ -33,7 +24,7 @@ def load_datasets(
 ]:
     val_dataset = mnn_ordinal.COCOInstances2017Ordinal2(
         dataset_dir,
-        "val",
+        "train",
         expected_image_size,
     )
     return val_dataset
@@ -85,15 +76,13 @@ def write_image_with_output_of_experiment3(
 
 
 if __name__ == "__main__":
-    dataset_dir = pathlib.Path(
-        "/home/emvasilopoulos/projects/ml_interview_ready_code/data/coco"
-    )
+    dataset_dir = pathlib.Path("/home/manos/ml_interview_ready_code/data/")
     classes = None  # ALL CLASSES
     val_dataset = load_datasets(
         dataset_dir, mnn.vision.image_size.ImageSize(640, 480), classes
     )
     # Prepare validation image
-    for i in range(3):
+    for i in range(len(val_dataset)):
         validation_image, target = val_dataset[i]
         validation_image_unsqueezed = validation_image.unsqueeze(0)
         target_bboxes, target_categories, target_confidences = (
@@ -104,5 +93,8 @@ if __name__ == "__main__":
             target_categories,
             target_confidences,
             validation_image_unsqueezed.squeeze(0),
-            f"validation_image_gt_{i}",
+            f"validation_image_gt",
         )
+        k = input()
+        if k == "q":
+            break
