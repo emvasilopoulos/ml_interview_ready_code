@@ -111,6 +111,8 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
         img_tensor = mnn.vision.process_input.reader.read_image_torchvision(
             self.images_dir / filename
         )
+        if img_tensor.shape[0] == 1:
+            img_tensor = img_tensor.repeat(3, 1, 1)
 
         x1s = data_for_image["x1_norm"].values
         y1s = data_for_image["y1_norm"].values
@@ -128,6 +130,8 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
         img_tensor = mnn.vision.process_input.reader.read_image_torchvision(
             self.images_dir / filename
         )
+        if img_tensor.shape[0] == 1:
+            img_tensor = img_tensor.repeat(3, 1, 1)
         x1 = int(data_for_image["start_x.crop"].values[0])
         y1 = int(data_for_image["start_y.crop"].values[0])
         x2 = int(data_for_image["end_x.crop"].values[0])

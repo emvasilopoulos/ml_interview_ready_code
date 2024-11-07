@@ -391,14 +391,14 @@ class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
             y1 = y1_norm * fixed_ratio_components.resize_height
             w = w_norm * fixed_ratio_components.resize_width
             h = h_norm * fixed_ratio_components.resize_height
-            x1, y1, x2, y2 = self.map_bbox_to_padded_image(
+            x1, y1, w, h = self.map_bbox_to_padded_image(
                 x1, y1, w, h, fixed_ratio_components, padding_percent
             )
             new_bbox_norm = [
                 x1 / self.expected_image_size.width,
                 y1 / self.expected_image_size.height,
-                x2 / self.expected_image_size.width,
-                y2 / self.expected_image_size.height,
+                w / self.expected_image_size.width,
+                h / self.expected_image_size.height,
             ]
             vector = self._create_object_vector(
                 new_bbox_norm, category, self.expected_image_size.width
