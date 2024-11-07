@@ -194,15 +194,19 @@ class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
         pad_amount = int(max_pad_amount * padding_percent)
         if fixed_ratio_components.pad_dimension == 1:
             y1 += pad_amount
+            im_w = fixed_ratio_components.resize_width
+            im_h = fixed_ratio_components.expected_dimension_size
         elif fixed_ratio_components.pad_dimension == 2:
             x1 += pad_amount
+            im_w = fixed_ratio_components.expected_dimension_size
+            im_h = fixed_ratio_components.resize_height
         else:
             raise ValueError("The pad_dimension should be 1 or 2")
 
-        if x1 + w > fixed_ratio_components.resize_width:
-            w = fixed_ratio_components.resize_width - x1
-        if y1 + h > fixed_ratio_components.resize_height:
-            h = fixed_ratio_components.resize_height - y1
+        if x1 + w >= im_w:
+            w = fixed_ratio_components.resize_width - x1 - 1
+        if y1 + h >= im_h:
+            h = fixed_ratio_components.resize_height - y1 - 1
         return x1, y1, w, h
 
 
