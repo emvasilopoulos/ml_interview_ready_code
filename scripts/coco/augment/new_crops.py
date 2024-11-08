@@ -2,12 +2,22 @@ import argparse
 import pandas as pd
 import pathlib
 import random
+import numba
 
-random.seed(42)
+SCHEMES = [
+    (0, 0.35, 0.65, 1),
+    (0.1, 0.43, 0.57, 0.9),
+    (0.31, 0.44, 0.85, 0.98),
+    (0.26, 0.39, 0.75, 0.88),
+]
 
 
 def map_bboxes_to_cropped_image(
-    row, start_x_percentage, start_y_percentage, end_x_percentage, end_y_percentage
+    row: pd.DataFrame,
+    start_x_percentage: float,
+    start_y_percentage: float,
+    end_x_percentage: float,
+    end_y_percentage: float,
 ):
     #
     image_width = row["image_width"]
@@ -20,10 +30,10 @@ def map_bboxes_to_cropped_image(
     Y2 = int(image_height * end_y_percentage)
 
     # BBOX for object
-    w = row["w_norm"] * image_width
-    x1 = row["x1_norm"] * image_width
-    h = row["h_norm"] * image_height
-    y1 = row["y1_norm"] * image_height
+    x1 = row["x1"]
+    y1 = row["y1"]
+    w = row["w"]
+    h = row["h"]
 
     # new x1, y1
     new_image_width = X2 - X1
@@ -54,14 +64,12 @@ def map_bboxes_to_cropped_image(
     if new_y1 + new_h1 > Y2:
         new_h1 = new_image_height - new_y1
 
-    xc = new_x1 + new_w1 / 2
-    yc = new_y1 + new_h1 / 2
     row["start_x.crop"] = X1
     row["start_y.crop"] = Y1
     row["end_x.crop"] = X2
     row["end_y.crop"] = Y2
-    row["x1_norm.crop"] = xc / (new_image_width)
-    row["y1_norm.crop"] = yc / (new_image_height)
+    row["x1_norm.crop"] = new_x1 / (new_image_width)
+    row["y1_norm.crop"] = new_y1 / (new_image_height)
     row["w_norm.crop"] = new_w1 / (new_image_width)
     row["h_norm.crop"] = new_h1 / (new_image_height)
     return row
@@ -71,11 +79,15 @@ class Counter:
     val = 0
 
 
-def modify_group(group):
-    start_x_percentage = random.uniform(0.26, 0.39)
-    start_y_percentage = random.uniform(0.26, 0.39)
-    end_x_percentage = random.uniform(0.75, 0.88)
-    end_y_percentage = random.uniform(0.75, 0.88)
+import pandas.api.typing
+
+
+def modify_group(group: pandas.api.typing.DataFrameGroupBy, scheme: int):
+    low_x, high_x, low_y, high_y = SCHEMES[scheme - 1]
+    start_x_percentage = random.uniform(low_x, high_x)
+    start_y_percentage = random.uniform(low_x, high_x)
+    end_x_percentage = random.uniform(low_y, high_y)
+    end_y_percentage = random.uniform(low_y, high_y)
     group[
         [
             "start_x.crop",
@@ -118,6 +130,7 @@ def modify_group(group):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--annotations-csv-path", type=str)
+    parser.add_argument("--scheme", type=int, default=1, choices=[1, 2, 3, 4])
     parser.add_argument("--random-seed", type=int, default=42)
     args = parser.parse_args()
 
@@ -126,9 +139,11 @@ if __name__ == "__main__":
     csv_path = pathlib.Path(args.annotations_csv_path)
     csv_dir = csv_path.parent
     csv_name = csv_path.stem
-
     df = pd.read_csv(csv_path)
-    df2 = df.groupby(by=["image_id"]).apply(lambda group: modify_group(group))
 
-    new_csv_path = csv_dir / f"{csv_name}_random_seed_{args.random_seed}.csv"
+    df2 = df.groupby(by=["image_id"]).apply(
+        lambda group: modify_group(group, args.scheme)
+    )
+
+    new_csv_path = csv_dir / f"{csv_name}_rand_scheme_{args.scheme}.csv"
     df2.to_csv(new_csv_path, index=False)

@@ -8,7 +8,9 @@ def image_name_from_coco_image_id(image_id: int) -> str:
 
 
 if __name__ == "__main__":
-    dataset_dir = pathlib.Path("/home/emvasilopoulos/projects/ml_interview_ready_code/data/coco")
+    dataset_dir = pathlib.Path(
+        "/home/emvasilopoulos/projects/ml_interview_ready_code/data/coco"
+    )
     annotations_path = dataset_dir / "annotations/instances_train2017_rand_scheme_4.csv"
     df = pd.read_csv(annotations_path.as_posix())
     hoi = [
@@ -43,8 +45,8 @@ if __name__ == "__main__":
             y = int(y1 * img_cropped.shape[0])
             width = int(w * img_cropped.shape[1])
             height = int(h * img_cropped.shape[0])
-            x -= width // 2
-            y -= height // 2
+            # x -= width // 2
+            # y -= height // 2
             cv2.rectangle(img_cropped, (x, y), (x + width, y + height), (0, 255, 0), 2)
         # cv2.imwrite("image.jpg", img_cropped)
         # k = input()

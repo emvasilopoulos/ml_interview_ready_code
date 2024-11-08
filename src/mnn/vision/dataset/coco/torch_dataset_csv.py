@@ -84,8 +84,12 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
         if len(self.annotations_schemes_paths):
             for scheme_path in self.annotations_schemes_paths:
                 new_df = pd.read_csv(scheme_path)
+                if "rand_scheme" not in new_df.columns:
+                    new_df["rand_scheme"] = scheme_path.stem.split("_")[-1]
                 df_cropped = pd.concat([new_df, df_cropped], ignore_index=True)
-        self.df_cropped_groups_by_image_id = df_cropped.groupby("image_id")
+        self.df_cropped_groups_by_image_id = df_cropped.groupby(
+            ["image_id", "rand_scheme"]
+        )
         self.cropped_groups_indexed = list(
             self.df_cropped_groups_by_image_id.groups.keys()
         )

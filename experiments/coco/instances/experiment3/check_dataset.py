@@ -5,7 +5,6 @@ from typing import List, Optional, Tuple
 import cv2
 import torch
 import torch.utils.tensorboard
-import tqdm
 
 import mnn.logging
 import mnn.vision.dataset.coco.experiments.detection_ordinal as mnn_ordinal
@@ -17,7 +16,6 @@ LOGGER = mnn.logging.get_logger(__name__)
 def load_datasets(
     dataset_dir: pathlib.Path,
     expected_image_size: mnn.vision.image_size.ImageSize,
-    classes: Optional[List[int]] = None,
 ) -> Tuple[
     mnn_ordinal.COCOInstances2017Ordinal2,
     mnn_ordinal.COCOInstances2017Ordinal2,
@@ -70,20 +68,22 @@ def write_image_with_output_of_experiment3(
             cv2.LINE_AA,
         )
 
-    # reverse mask
-    os.makedirs(f"assessment_images/{sub_dir}", exist_ok=True)
-    cv2.imwrite(f"assessment_images/{sub_dir}/bboxed_image.jpg", image)
+    cv2.imshow("image", image)
+
+    # # reverse mask
+    # os.makedirs(f"assessment_images/{sub_dir}", exist_ok=True)
+    # cv2.imwrite(f"assessment_images/{sub_dir}/bboxed_image.jpg", image)
 
 
 if __name__ == "__main__":
-    dataset_dir = pathlib.Path("/home/manos/ml_interview_ready_code/data/")
-    classes = None  # ALL CLASSES
-    val_dataset = load_datasets(
-        dataset_dir, mnn.vision.image_size.ImageSize(640, 480), classes
+    dataset_dir = pathlib.Path(
+        "/home/emvasilopoulos/projects/ml_interview_ready_code/data/coco"
     )
+    val_dataset = load_datasets(dataset_dir, mnn.vision.image_size.ImageSize(640, 480))
     # Prepare validation image
     for i in range(len(val_dataset)):
-        validation_image, target = val_dataset[i]
+        idx = len(val_dataset) - i - 1
+        validation_image, target = val_dataset[idx]
         validation_image_unsqueezed = validation_image.unsqueeze(0)
         target_bboxes, target_categories, target_confidences = (
             val_dataset.decode_output_tensor(target)
@@ -95,6 +95,6 @@ if __name__ == "__main__":
             validation_image_unsqueezed.squeeze(0),
             f"validation_image_gt",
         )
-        k = input()
-        if k == "q":
+        if cv2.waitKey(0) & 0xFF == ord("q"):
+            cv2.destroyAllWindows()
             break

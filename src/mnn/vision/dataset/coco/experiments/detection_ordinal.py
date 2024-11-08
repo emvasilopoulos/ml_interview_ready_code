@@ -403,6 +403,7 @@ class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
             )
             xc = x1 + w / 2
             yc = y1 + h / 2
+
             new_bbox_norm = [
                 xc / self.expected_image_size.width,
                 yc / self.expected_image_size.height,
