@@ -43,7 +43,34 @@ HEADERS = [
     "y1_norm.crop",
     "w_norm.crop",
     "h_norm.crop",
+    "rand_scheme",
 ]
+
+
+def map_out_of_bounds_bbox_in_crop(x1: float, y1: float, w: float, h: float):
+    """
+    Returns -1, -1, -1, -1 if the bbox is completely out of the crop.
+    """
+    if x1 > 1:
+        return (-1, -1, -1, -1), False
+    if x1 + w < 0:
+        return (-1, -1, -1, -1), False
+    else:
+        x1 = max(0, x1)
+
+    if y1 > 1:
+        return (-1, -1, -1, -1), False
+    if y1 + h < 0:
+        return (-1, -1, -1, -1), False
+    else:
+        y1 = max(0, y1)
+
+    if x1 + w > 1:
+        w = 1 - x1
+    if y1 + h > 1:
+        h = 1 - y1
+
+    return (x1, y1, w, h), True
 
 
 class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
@@ -86,6 +113,7 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
                 new_df = pd.read_csv(scheme_path)
                 if "rand_scheme" not in new_df.columns:
                     new_df["rand_scheme"] = scheme_path.stem.split("_")[-1]
+                    LOGGER.warning("Added 'rand_scheme' column to the dataframe")
                 df_cropped = pd.concat([new_df, df_cropped], ignore_index=True)
         self.df_cropped_groups_by_image_id = df_cropped.groupby(
             ["image_id", "rand_scheme"]
@@ -127,6 +155,7 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
         image_id = data_for_image["image_id"].values[0]
         img_tensor = self._read_image(image_id)
 
+        # Crop the image
         x1 = int(data_for_image["start_x.crop"].values[0])
         y1 = int(data_for_image["start_y.crop"].values[0])
         x2 = int(data_for_image["end_x.crop"].values[0])
@@ -137,31 +166,30 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
         y1s = data_for_image["y1_norm.crop"].values
         ws = data_for_image["w_norm.crop"].values
         hs = data_for_image["h_norm.crop"].values
+        categories = data_for_image["category_id"].values
 
         # Filter bboxes that are outside the crop
         x1_list = []
         y1_list = []
         w_list = []
         h_list = []
+        categories_list = []
         for i in range(len(x1s)):
-            x1 = x1s[i]
-            if x1 < 0 or x1 > 1:
-                continue
-            y1 = y1s[i]
-            if y1 < 0 or y1 > 1:
-                continue
-            w = ws[i]
-            if x1 + w > 1:
-                w = 1 - x1
-            h = hs[i]
-            if y1 + h > 1:
-                h = 1 - y1
-            x1_list.append(x1)
-            y1_list.append(y1)
-            w_list.append(w)
-            h_list.append(h)
+            x1_crop = x1s[i]
+            y1_crop = y1s[i]
+            w_crop = ws[i]
+            h_crop = hs[i]
 
-        categories = data_for_image["category_id"].values
+            (x1_crop, y1_crop, w_crop, h_crop), is_inside = (
+                map_out_of_bounds_bbox_in_crop(x1_crop, y1_crop, w_crop, h_crop)
+            )
+            if not is_inside:
+                continue
+            x1_list.append(x1_crop)
+            y1_list.append(y1_crop)
+            w_list.append(w_crop)
+            h_list.append(h_crop)
+            categories_list.append(categories[i])
         annotations = self._prepare_annotations(
             x1_list, y1_list, w_list, h_list, categories
         )
@@ -169,11 +197,29 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
 
     def get_pair(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
         if idx < len(self.df_original_groups_by_image_id):
-            return self._get_pair_original(idx)
+            img_tensor, annotations = self._get_pair_original(idx)
         else:
-            return self._get_pair_cropped(
+            img_tensor, annotations = self._get_pair_cropped(
                 idx - len(self.df_original_groups_by_image_id)
             )
+        if len(annotations) == 0:
+            dtype = img_tensor.dtype
+            shape = img_tensor.shape
+            img_tensor = get_random_image(shape, dtype)
+        return img_tensor, annotations
+
+
+def get_random_image(shape, dtype):
+    choice = random.randint(0, 2)
+    if choice == 0:
+        x = torch.ones(shape, dtype=dtype) * random.uniform(0, 1)
+    elif choice == 1:
+        x = torch.ones(shape, dtype=dtype)
+        for channel in range(shape[0]):
+            x[channel] *= random.uniform(0, 1)
+    else:
+        x = torch.rand(shape, dtype=dtype)
+    return x
 
 
 class COCODatasetInstances2017(BaseCOCODatasetGroupedCsv):
