@@ -6,7 +6,7 @@ network:
       number_of_layers: 3
       d_model: 640 # Same as width of image
       n_heads: 16
-      feed_forward_dimensions: 480
+      feed_forward_dimensions: 625 # 25x25 --> Hypothetical Grid system
       activation: gelu
       LayerNorm:
         has_layer_norm: true
@@ -21,7 +21,7 @@ network:
       number_of_layers: 3
       d_model: 640
       n_heads: 16
-      feed_forward_dimensions: 480
+      feed_forward_dimensions: 625
       activation: gelu
       LayerNorm:
         has_layer_norm: true
@@ -36,7 +36,7 @@ network:
       number_of_layers: 1
       d_model: 640
       n_heads: 16
-      feed_forward_dimensions: 480
+      feed_forward_dimensions: 625
       activation: gelu
       LayerNorm:
         has_layer_norm: true

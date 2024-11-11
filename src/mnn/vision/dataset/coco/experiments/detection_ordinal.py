@@ -344,34 +344,12 @@ class COCOInstances2017Ordinal(BaseCOCOInstances2017Ordinal):
 
 class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
 
-    def get_output_tensor(
+    def _make_annotations_to_vectors(
         self,
         annotations: Dict[str, Any],
         fixed_ratio_components: mnn_resize_fixed_ratio.ResizeFixedRatioComponents,
-        padding_percent: float = 0,
-        current_image_size: Optional[mnn.vision.image_size.ImageSize] = None,
-    ) -> torch.Tensor:
-        output_tensor_bboxes = torch.zeros(
-            (self.expected_image_size.height, self.expected_image_size.width)
-        )
-
-        # Add vector with number of objects
-        n_objects = len(annotations)
-        if n_objects > self.max_objects:
-            """Keep the 'max_objects' objects with the highest area"""
-            # This point will never be reached, unless you're a dork and use an image width of less than 420 pixels.
-            raise NotImplementedError(
-                "Keeping the 'max_objects' objects with the highest area is not implemented yet"
-            )
-
-        output_tensor_n_objects = torch.zeros(
-            (self.expected_image_size.height, self.expected_image_size.width)
-        )
-        output_tensor_n_objects[0, :] = self._create_number_of_objects_vector(
-            n_objects, self.expected_image_size.width
-        )
-
-        # Add whole image as a bounding box
+        padding_percent: float,
+    ):
         vectors_for_output = []
         for i, annotation in enumerate(annotations):
             category = int(annotation["category_id"]) - 1
@@ -416,7 +394,41 @@ class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
             )
 
             vectors_for_output.append((vector, area))
+        return vectors_for_output
 
+    def get_output_tensor(
+        self,
+        annotations: Dict[str, Any],
+        fixed_ratio_components: mnn_resize_fixed_ratio.ResizeFixedRatioComponents,
+        padding_percent: float = 0,
+        current_image_size: Optional[mnn.vision.image_size.ImageSize] = None,
+    ) -> torch.Tensor:
+        output_tensor_bboxes = torch.zeros(
+            (self.expected_image_size.height, self.expected_image_size.width)
+        )
+
+        # Add vector with number of objects
+        n_objects = len(annotations)
+        if n_objects > self.max_objects:
+            """Keep the 'max_objects' objects with the highest area"""
+            # This point will never be reached, unless you're a dork and use an image width of less than 420 pixels.
+            raise NotImplementedError(
+                "Keeping the 'max_objects' objects with the highest area is not implemented yet"
+            )
+
+        output_tensor_n_objects = torch.zeros(
+            (self.expected_image_size.height, self.expected_image_size.width)
+        )
+        output_tensor_n_objects[0, :] = self._create_number_of_objects_vector(
+            n_objects, self.expected_image_size.width
+        )
+
+        # Add whole image as a bounding box
+        vectors_for_output = self._make_annotations_to_vectors(
+            annotations, fixed_ratio_components, padding_percent
+        )
+
+        # FAIL
         # Sort by area and then place in output tensor, so there's at least a logic/order in the predictions
         sorted_vectors_for_output = sorted(vectors_for_output, key=lambda x: x[1])
         for i, (vector, area) in enumerate(sorted_vectors_for_output):
@@ -434,7 +446,6 @@ class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
         objects = y[1, : self.TOTAL_POSSIBLE_OBJECTS, :]
 
         # Extract number of objects
-
         n_objects = min(torch.argmax(n_objects_vector), self.TOTAL_POSSIBLE_OBJECTS)
         if n_objects == 0:
             return [], [], []
@@ -476,16 +487,149 @@ class COCOInstances2017Ordinal2(BaseCOCOInstances2017Ordinal):
 
         return bboxes[:n_objects], categories[:n_objects], objectness_scores[:n_objects]
 
+    def decode_prediction_raw(
+        self, y: torch.Tensor, filter_by_objectness_score: bool = False
+    ):
+        predicted_objects = y[1, :, :]
+        # Extract bboxes
+        _coord_step = self.bbox_vector_size // 4
+        h, w = self.expected_image_size.height, self.expected_image_size.width
+        bboxes = []
+        categories = []
+        objectness_scores = []
+        for i, o in enumerate(predicted_objects):
+            objectness_score = o[-1]
+            if filter_by_objectness_score and objectness_score < 0.5:
+                continue
+            total_classes = len(self.classes)
+            vector_size = len(o)
+            idx_bbox = vector_size - (total_classes + 1)
+            bbox_raw = o[:idx_bbox]
+            xc = self._decode_coordinate_vector(bbox_raw[:_coord_step], w)
+            yc = self._decode_coordinate_vector(
+                bbox_raw[_coord_step : 2 * _coord_step], h
+            )
+            w0 = self._decode_coordinate_vector(
+                bbox_raw[2 * _coord_step : 3 * _coord_step], w
+            )
+            h0 = self._decode_coordinate_vector(
+                bbox_raw[3 * _coord_step : 4 * _coord_step], h
+            )
+
+            if all(x == 0 for x in [xc, yc, w0, h0]):
+                continue
+
+            bbox = [xc, yc, w0, h0]
+            idx_category = idx_bbox + total_classes
+            category = torch.argmax(o[idx_bbox:idx_category])
+            bboxes.append(bbox)
+            categories.append(category)
+            objectness_scores.append(objectness_score)
+
+        return bboxes, categories, objectness_scores
+
 
 class COCOInstances2017Ordinal3(BaseCOCOInstances2017Ordinal):
 
-    MOSAIC_SIZE = 4
-
-    def __init__(self, data_dir, split, expected_image_size):
+    def __init__(
+        self,
+        data_dir: pathlib.Path,
+        split: str,
+        expected_image_size: mnn.vision.image_size.ImageSize,
+    ):
         super().__init__(data_dir, split, expected_image_size)
+        if self.expected_image_size.height ** (1 / 2) % 1 != 0:
+            raise ValueError(
+                f"The square root of the height of the expected image size for '{__class__}' should be an integer."
+            )
 
-    def get_output_tensor(self):
-        pass
+        self.grid_S = int(
+            self.expected_image_size.height ** (1 / 2)
+        )  # S x S grid. From YOLO paper
+
+    def _calculate_position_in_grid(self, xc_norm: float, yc_norm: float):
+        step = 1 / self.grid_S
+        x = int(xc_norm // step)
+        y = int(yc_norm // step)
+        raise NotImplementedError("Not implemented yet")
+
+    def _make_annotations_to_vectors_and_place_in_output_tensor(
+        self,
+        dst_tensor: torch.Tensor,
+        annotations: Dict[str, Any],
+        fixed_ratio_components: mnn_resize_fixed_ratio.ResizeFixedRatioComponents,
+        padding_percent: float,
+    ):
+        for i, annotation in enumerate(annotations):
+
+            category = int(annotation["category_id"]) - 1
+            if self.desired_classes is not None and not (
+                self.desired_classes[0] <= category <= self.desired_classes[-1]
+            ):
+                continue
+
+            x1_norm, y1_norm, w_norm, h_norm = annotation["normalized_bbox"]
+
+            area = w_norm * h_norm
+            # Skip very small bboxes. Bad annotations
+            if area < 0.0004:
+                continue
+            # Skip very close to image borders bboxes. Bad annotations
+            if (
+                x1_norm > 0.99
+                or y1_norm > 0.99
+                or (x1_norm + w_norm) <= 0.01
+                or (y1_norm + h_norm) <= 0.01
+            ):
+                continue
+            xc_norm = x1_norm + w_norm / 2
+            yc_norm = y1_norm + h_norm / 2
+            position = self._calculate_position_in_grid(xc_norm, yc_norm)
+
+            x1 = x1_norm * fixed_ratio_components.resize_width
+            y1 = y1_norm * fixed_ratio_components.resize_height
+            w = w_norm * fixed_ratio_components.resize_width
+            h = h_norm * fixed_ratio_components.resize_height
+            x1, y1, w, h = self.map_bbox_to_padded_image(
+                x1, y1, w, h, fixed_ratio_components, padding_percent
+            )
+            xc = x1 + w / 2
+            yc = y1 + h / 2
+
+            new_bbox_norm = [
+                xc / self.expected_image_size.width,
+                yc / self.expected_image_size.height,
+                w / self.expected_image_size.width,
+                h / self.expected_image_size.height,
+            ]
+
+            vector = self._create_object_vector(
+                new_bbox_norm, category, self.expected_image_size.width
+            )
+
+            vectors_for_output.append((vector, area))
+        return vectors_for_output
+
+    def get_output_tensor(
+        self,
+        annotations: Dict[str, Any],
+        fixed_ratio_components: mnn_resize_fixed_ratio.ResizeFixedRatioComponents,
+        padding_percent: float = 0,
+        current_image_size: Optional[mnn.vision.image_size.ImageSize] = None,
+    ) -> torch.Tensor:
+        output_tensor_bboxes = torch.zeros(
+            (self.expected_image_size.height, self.expected_image_size.width)
+        )
+
+        # Add whole image as a bounding box
+        self._make_annotations_to_vectors_and_place_in_output_tensor(
+            dst_tensor=output_tensor_bboxes,
+            annotations=annotations,
+            fixed_ratio_components=fixed_ratio_components,
+            padding_percent=padding_percent,
+        )
+
+        return output_tensor_bboxes
 
 
 def write_image_with_output(

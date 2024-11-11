@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 import pathlib
 from typing import List, Optional, Tuple
@@ -103,23 +104,172 @@ def write_image_with_output_of_experiment3(
     cv2.imwrite(f"assessment_images/{sub_dir}/bboxed_image.jpg", image)
 
 
-def calculate_loss(output0, target0, output1, target1, loss_fn):
-    # We only care about the first vector from output0
+def calculate_loss_n_objects(
+    output0: torch.Tensor,
+    target0: torch.Tensor,
+    loss_fn: torch.nn.Module,
+):
+    # 'output0' is the number of objects
+    ## We only care about the first vector from output0
     pred_n_objects = output0[:, 0, :]
     target_n_objects = target0[:, 0, :]
     loss1 = loss_fn(pred_n_objects, target_n_objects)
-    # The rest should all be zeros
+    ## The rest should all be zeros
     pred_n_objects_rest = output0[:, 1:, :]
     target_n_objects_rest = target0[:, 1:, :]
     loss1_rest = loss_fn(pred_n_objects_rest, target_n_objects_rest)
-    total_loss = loss1 + loss1_rest
+    total_loss0 = loss1 + loss1_rest
+    return total_loss0
 
-    # Compute loss for each bounding box
+
+def bbox_iou(box1, box2, xywh=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-7):
+    """
+    Calculate Intersection over Union (IoU) of box1(1, 4) to box2(n, 4).
+
+    Args:
+        box1 (torch.Tensor): A tensor representing a single bounding box with shape (1, 4).
+        box2 (torch.Tensor): A tensor representing n bounding boxes with shape (n, 4).
+        xywh (bool, optional): If True, input boxes are in (x, y, w, h) format. If False, input boxes are in
+                               (x1, y1, x2, y2) format. Defaults to True.
+        GIoU (bool, optional): If True, calculate Generalized IoU. Defaults to False.
+        DIoU (bool, optional): If True, calculate Distance IoU. Defaults to False.
+        CIoU (bool, optional): If True, calculate Complete IoU. Defaults to False.
+        eps (float, optional): A small value to avoid division by zero. Defaults to 1e-7.
+
+    Returns:
+        (torch.Tensor): IoU, GIoU, DIoU, or CIoU values depending on the specified flags.
+    """
+    # Get the coordinates of bounding boxes
+    if xywh:  # transform from xywh to xyxy
+        (x1, y1, w1, h1), (x2, y2, w2, h2) = box1.chunk(4, -1), box2.chunk(4, -1)
+        w1_, h1_, w2_, h2_ = w1 / 2, h1 / 2, w2 / 2, h2 / 2
+        b1_x1, b1_x2, b1_y1, b1_y2 = x1 - w1_, x1 + w1_, y1 - h1_, y1 + h1_
+        b2_x1, b2_x2, b2_y1, b2_y2 = x2 - w2_, x2 + w2_, y2 - h2_, y2 + h2_
+    else:  # x1, y1, x2, y2 = box1
+        b1_x1, b1_y1, b1_x2, b1_y2 = box1.chunk(4, -1)
+        b2_x1, b2_y1, b2_x2, b2_y2 = box2.chunk(4, -1)
+        w1, h1 = b1_x2 - b1_x1, b1_y2 - b1_y1 + eps
+        w2, h2 = b2_x2 - b2_x1, b2_y2 - b2_y1 + eps
+
+    # Intersection area
+    LOGGER.info(f"b1_x1: {b1_x1.shape}")
+    LOGGER.info(f"b2_x1: {b2_x1.shape}")
+    LOGGER.info(f"b1_x2: {b1_x2.shape}")
+    LOGGER.info(f"b2_x2: {b2_x2.shape}")
+    inter = (b1_x2.minimum(b2_x2) - b1_x1.maximum(b2_x1)).clamp_(0) * (
+        b1_y2.minimum(b2_y2) - b1_y1.maximum(b2_y1)
+    ).clamp_(0)
+
+    # Union Area
+    union = w1 * h1 + w2 * h2 - inter + eps
+
+    # IoU
+    iou = inter / union
+    if CIoU or DIoU or GIoU:
+        cw = b1_x2.maximum(b2_x2) - b1_x1.minimum(
+            b2_x1
+        )  # convex (smallest enclosing box) width
+        ch = b1_y2.maximum(b2_y2) - b1_y1.minimum(b2_y1)  # convex height
+        if CIoU or DIoU:  # Distance or Complete IoU https://arxiv.org/abs/1911.08287v1
+            c2 = cw.pow(2) + ch.pow(2) + eps  # convex diagonal squared
+            rho2 = (
+                (b2_x1 + b2_x2 - b1_x1 - b1_x2).pow(2)
+                + (b2_y1 + b2_y2 - b1_y1 - b1_y2).pow(2)
+            ) / 4  # center dist**2
+            if (
+                CIoU
+            ):  # https://github.com/Zzh-tju/DIoU-SSD-pytorch/blob/master/utils/box/box_utils.py#L47
+                v = (4 / math.pi**2) * ((w2 / h2).atan() - (w1 / h1).atan()).pow(2)
+                with torch.no_grad():
+                    alpha = v / (v - iou + (1 + eps))
+                return iou - (rho2 / c2 + v * alpha)  # CIoU
+            return iou - rho2 / c2  # DIoU
+        c_area = cw * ch + eps  # convex area
+        return (
+            iou - (c_area - union) / c_area
+        )  # GIoU https://arxiv.org/pdf/1902.09630.pdf
+    return iou  # IoU
+
+
+def calculate_bbox_loss(
+    output: torch.Tensor,
+    target: torch.Tensor,
+    loss_fn: torch.nn.Module,
+    dataset: mnn_ordinal.COCOInstances2017Ordinal2,
+):
+    loss_bbox = 0
+    loss_categories = 0
+    for output_sample, target_sample in zip(output, target):
+        # Prepare predictions
+        pred_bboxes, pred_categories, _ = dataset.decode_prediction_raw(output_sample)
+        pred_bboxes_tensor = torch.Tensor(pred_bboxes)
+        pred_categories_tensor = torch.Tensor(pred_categories)
+
+        # Prepare targets
+        n_objects_vector = target_sample[0, 0, :]
+        n_objects = min(torch.argmax(n_objects_vector), dataset.TOTAL_POSSIBLE_OBJECTS)
+        target_bboxes_tensor = torch.zeros(pred_bboxes_tensor.shape)
+        target_categories_tensor = torch.zeros(pred_categories_tensor.shape)
+        if n_objects > 0:
+            objects_dim = target_sample[1, :, :].shape[0]
+            times_to_repeat = objects_dim // n_objects
+            rest = objects_dim % n_objects
+            target_bboxes, target_categories, _ = dataset.decode_output_tensor(
+                target_sample
+            )
+            t_bboxes = target_bboxes.copy()
+            t_categories = target_categories.copy()
+            for _ in range(times_to_repeat):
+                target_bboxes += t_bboxes
+                target_categories += t_categories
+                # target_objectnesses.extend(target_objectnesses)
+            if rest > 0:
+                target_bboxes += t_bboxes[:rest]
+                target_categories += t_categories[:rest]
+                # target_objectnesses.extend(target_objectnesses[:rest])
+
+            target_bboxes_tensor = torch.Tensor(target_bboxes)
+            target_categories_tensor = torch.Tensor(target_categories)
+            LOGGER.info(target_bboxes_tensor.shape)
+
+        ious = bbox_iou(pred_bboxes_tensor, target_bboxes_tensor)
+        loss_iou = 1.0 - ious
+        loss_bbox += loss_iou.sum()
+        loss_categories += loss_fn(
+            pred_categories_tensor.sigmoid(), target_categories_tensor.sigmoid()
+        )  # TODO: Not sure about the sigmoid
+
+    return loss_bbox / output.shape[0], loss_categories / output.shape[0]
+
+
+def calculate_loss(
+    output0: torch.Tensor,
+    target0: torch.Tensor,
+    output1: torch.Tensor,
+    target1: torch.Tensor,
+    loss_fn: torch.nn.Module,
+):
+    loss = []
+    # 'output0' is the number of objects
+    ## We only care about the first vector from output0
+    pred_n_objects = output0[:, 0, :]
+    target_n_objects = target0[:, 0, :]
+    loss1 = loss_fn(pred_n_objects, target_n_objects)
+    ## The rest should all be zeros
+    pred_n_objects_rest = output0[:, 1:, :]
+    target_n_objects_rest = target0[:, 1:, :]
+    loss1_rest = loss_fn(pred_n_objects_rest, target_n_objects_rest)
+    total_loss0 = loss1 + loss1_rest
+    loss.append(total_loss0)
+
+    # 'output1' is the bounding boxes
+    ## Compute loss for each bounding box
+    total_loss = 0
     for i in range(output1.shape[1]):
         pred_bboxes = output1[:, i, :]
         target_bboxes = target1[:, i, :]
         total_loss += loss_fn(pred_bboxes, target_bboxes)
-    # And then all bounding boxes together
+    ## And then all bounding boxes together
     total_loss += loss_fn(output1, target1)
     return total_loss
 
@@ -144,7 +294,7 @@ def train_one_epoch(
     running_iou_05 = 0
 
     val_counter = 0
-    tqdm_obj = tqdm.tqdm(train_loader, desc="Training | Loss: 0 | IoU-0.5: 0")
+    tqdm_obj = tqdm.tqdm(train_loader, desc="Training | Loss: 0 | IoU: 0")
     for i, (image_batch, target) in enumerate(tqdm_obj):
         # Prepare input
         image_batch = image_batch.to(
@@ -172,7 +322,15 @@ def train_one_epoch(
         # Forward pass
         output0, output1 = model(image_batch)
 
-        total_loss = calculate_loss(output0, target0, output1, target1, loss_fn)
+        # total_loss = calculate_loss(output0, target0, output1, target1, loss_fn)
+        loss_n_object = calculate_loss_n_objects(output0, target0, loss_fn)
+        loss_bbox, loss_categories = calculate_bbox_loss(
+            torch.cat([output0.unsqueeze(1), output1.unsqueeze(1)], dim=1),
+            target,
+            loss_fn,
+            train_loader.dataset,
+        )
+        total_loss = loss_n_object + loss_bbox + loss_categories
         total_loss.backward()
 
         if scheduler is not None:
@@ -180,39 +338,32 @@ def train_one_epoch(
         # Adjust learning weights
         optimizer.step()
 
-        # Calculate IoU
-        temp = 0
-        # for t, o0, o1 in zip(target, output0, output1):
-        #     output = torch.stack([o0, o1], dim=0)
-        #     pred_bboxes, _, _ = train_loader.dataset.decode_output_tensor(output)
-        #     target_bboxes, _, _ = train_loader.dataset.decode_output_tensor(t)
-        #     # temp += (
-        #     #     mnn_metrics.calculate_iou_bbox_batch(
-        #     #         torch.Tensor(pred_bboxes),
-        #     #         torch.Tensor(target_bboxes),
-        #     #     )
-        #     #     .mean()
-        #     #     .item()
-        #     # )
-        #     temp += 0
-        current_iou_05 = temp / len(output0)
-
         # Log metrics
         training_step = i + current_epoch * len(train_loader)
         current_loss = total_loss.item()
         tqdm_obj.set_description(
-            f"Training | Loss: {current_loss:.4f} | IoU-0.5: {current_iou_05:.4f}"
+            f"Training | Total: {current_loss:.4f} | Bbox: {loss_bbox.item():.4f} | n-objects : {loss_n_object.item():.4f} | Categories: {loss_categories.item():.4f}"
         )
         if writer is not None:
-            writer.add_scalar("Loss/train", current_loss, training_step)
+            writer.add_scalar("Loss/train_total", current_loss, training_step)
             writer.add_scalar(
-                "IoU_0.5/train",
-                current_iou_05,
+                "Loss/train_bbox",
+                loss_bbox.item(),
+                training_step,
+            )
+            writer.add_scalar(
+                "Loss/train_categories",
+                loss_bbox.item(),
+                training_step,
+            )
+            writer.add_scalar(
+                "Loss/train_n_objects",
+                loss_n_object.item(),
                 training_step,
             )
 
         running_loss += current_loss
-        running_iou_05 += current_iou_05
+        running_iou_05 += loss_bbox
         if i % log_rate == 0:
             model_state = model.state_dict()
             model_state["epoch"] = current_epoch
@@ -281,7 +432,10 @@ def val_once(
     with torch.no_grad():
         running_loss = 0
         running_iou_05 = 0
-        tqdm_obj = tqdm.tqdm(val_loader, desc="Validation | Loss: 0 | IoU-0.5: 0")
+        tqdm_obj = tqdm.tqdm(
+            val_loader,
+            desc=f"Validation | Total: 0 | Bbox: 0 | n-objects : 0 | Categories: 0",
+        )
         for i, (image_batch, target) in enumerate(tqdm_obj):
             # Prepare input
             image_batch = image_batch.to(
@@ -305,41 +459,42 @@ def val_once(
 
             # Forward pass
             output0, output1 = model(image_batch)
-            total_loss = calculate_loss(output0, target0, output1, target1, loss_fn)
 
-            # Calculate IoU
-            temp = 0
-            # for t, o0, o1 in zip(target, output0, output1):
-            #     output = torch.stack([o0, o1], dim=0)
-            #     pred_bboxes, _, _ = val_loader.dataset.decode_output_tensor(output)
-            #     target_bboxes, _, _ = val_loader.dataset.decode_output_tensor(t)
-            #     temp += (
-            #         mnn_metrics.calculate_iou_bbox_batch(
-            #             torch.Tensor(pred_bboxes),
-            #             torch.Tensor(target_bboxes),
-            #         )
-            #         .mean()
-            #         .item()
-            #     )
-            #     temp += 0
-            current_iou_05 = temp / len(output0)
+            loss_n_object = calculate_loss_n_objects(output0, target0, loss_fn)
+            loss_bbox, loss_categories = calculate_bbox_loss(
+                torch.cat([output0.unsqueeze(1), output1.unsqueeze(1)], dim=1),
+                target,
+                loss_fn,
+                val_loader.dataset,
+            )
+            total_loss = loss_n_object + loss_bbox + loss_categories
+            total_loss.backward()
 
             # Log metrics
             validation_step = i + current_epoch * len(val_loader)
             current_loss = total_loss.item()
             tqdm_obj.set_description(
-                f"Validation | Loss: {current_loss:.4f} | IoU-0.5: {current_iou_05:.4f}"
+                f"Validation | Total: {current_loss:.4f} | Bbox: {loss_bbox.item():.4f} | n-objects : {loss_n_object.item():.4f} | Categories: {loss_categories.item():.4f}"
             )
             if writer is not None:
-                writer.add_scalar("Loss/val", current_loss, validation_step)
+                writer.add_scalar("Loss/val_total", current_loss, validation_step)
                 writer.add_scalar(
-                    "IoU_0.5/val",
-                    current_iou_05,
-                    i + current_epoch * len(val_loader),
+                    "Loss/val_bbox",
+                    loss_bbox.item(),
+                    validation_step,
+                )
+                writer.add_scalar(
+                    "Loss/val_categories",
+                    loss_bbox.item(),
+                    validation_step,
+                )
+                writer.add_scalar(
+                    "Loss/val_n_objects",
+                    loss_n_object.item(),
+                    validation_step,
                 )
 
             running_loss += current_loss
-            running_iou_05 += current_iou_05
             if i % log_rate == 0 and i > 0:
                 last_loss = running_loss / log_rate
         return last_loss
