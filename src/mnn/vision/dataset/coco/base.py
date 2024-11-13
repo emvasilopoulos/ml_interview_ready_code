@@ -164,6 +164,15 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
     ) -> torch.Tensor:
         raise NotImplementedError()
 
+    @abc.abstractmethod
+    def write_image_with_model_output(
+        self,
+        model_output: torch.Tensor,
+        image: torch.Tensor,
+        filename: str,
+    ):
+        pass
+
 
 class COCODatasetInstances2017(BaseCOCODatasetGrouped):
 

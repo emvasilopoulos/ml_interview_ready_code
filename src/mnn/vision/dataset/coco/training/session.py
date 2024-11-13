@@ -24,7 +24,7 @@ def train_one_epoch(
     writer: torch.utils.tensorboard.SummaryWriter = None,
     log_rate: int = 1000,
     model_save_path: pathlib.Path = pathlib.Path("my_vit_object_detection.pth"),
-    scheduler=None
+    scheduler=None,
 ) -> None:
 
     model.train()  # important for batch normalization and dropout layers
@@ -103,13 +103,14 @@ def train_one_epoch(
 
             # Store validation image to inspect the model's performance
             temp_out = model(validation_image)
-            # TODO: USE ABSTRACT METHOD TO WRITE IMAGE
-            mnn_train_utils.write_image_with_output_of_experiment2(
-                temp_out, validation_image, "validation_image_prediction"
+            train_loader.dataset.write_image_with_model_output(
+                temp_out.squeeze(0),
+                validation_image.squeeze(0),
+                f"validation_image_prediction",
             )
-            mnn_train_utils.write_image_with_output_of_experiment2(
-                target0[0].unsqueeze(0),
-                image_batch[0].unsqueeze(0),
+            train_loader.dataset.write_image_with_model_output(
+                target0[0],
+                image_batch[0],
                 "train_image_ground_truth",
             )
             val_counter += 1

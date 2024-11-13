@@ -17,7 +17,7 @@ Actually I will use 79 classes and fuck the 80th class. I don't care. So we have
 import abc
 import os
 import pathlib
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 import cv2
@@ -543,15 +543,33 @@ class COCOInstances2017Ordinal3(BaseCOCOInstances2017Ordinal):
                 f"The square root of the height of the expected image size for '{__class__}' should be an integer."
             )
 
-        self.grid_S = int(
-            self.expected_image_size.height ** (1 / 2)
-        )  # S x S grid. From YOLO paper
+        self.grid_S = int(self.expected_image_size.height ** (1 / 2))
 
-    def _calculate_position_in_grid(self, xc_norm: float, yc_norm: float):
+    def _calculate_position_in_grid(
+        self, xc_norm: float, yc_norm: float
+    ) -> Tuple[int, int]:
+        # TODO - is it possible to run in O(1) time?
+
         step = 1 / self.grid_S
-        x = int(xc_norm // step)
-        y = int(yc_norm // step)
-        raise NotImplementedError("Not implemented yet")
+        for i in range(self.grid_S):
+            if i * step <= xc_norm <= (i + 1) * step:
+                x = i
+            if i * step <= yc_norm <= (i + 1) * step:
+                y = i
+        return x, y
+
+    def _calculate_coordinate_in_grid(self, coord_norm: float, position: int) -> float:
+        step = 1 / self.grid_S
+        lower_bound = position * step
+        return (coord_norm - lower_bound) / step
+
+    def _calculate_position_in_tensor_from_grid(self, x: int, y: int) -> int:
+        return y * self.grid_S + x
+
+    def _calculate_position_in_grid_from_tensor(self, position: int) -> Tuple[int, int]:
+        y = position // self.grid_S
+        x = position % self.grid_S
+        return x, y
 
     def _make_annotations_to_vectors_and_place_in_output_tensor(
         self,
@@ -561,7 +579,6 @@ class COCOInstances2017Ordinal3(BaseCOCOInstances2017Ordinal):
         padding_percent: float,
     ):
         for i, annotation in enumerate(annotations):
-
             category = int(annotation["category_id"]) - 1
             if self.desired_classes is not None and not (
                 self.desired_classes[0] <= category <= self.desired_classes[-1]
@@ -582,33 +599,54 @@ class COCOInstances2017Ordinal3(BaseCOCOInstances2017Ordinal):
                 or (y1_norm + h_norm) <= 0.01
             ):
                 continue
-            xc_norm = x1_norm + w_norm / 2
-            yc_norm = y1_norm + h_norm / 2
-            position = self._calculate_position_in_grid(xc_norm, yc_norm)
 
-            x1 = x1_norm * fixed_ratio_components.resize_width
-            y1 = y1_norm * fixed_ratio_components.resize_height
-            w = w_norm * fixed_ratio_components.resize_width
-            h = h_norm * fixed_ratio_components.resize_height
-            x1, y1, w, h = self.map_bbox_to_padded_image(
-                x1, y1, w, h, fixed_ratio_components, padding_percent
+            vector, position_x, position_y = self._transform_annotation_into_vector(
+                annotation, fixed_ratio_components, padding_percent
             )
-            xc = x1 + w / 2
-            yc = y1 + h / 2
-
-            new_bbox_norm = [
-                xc / self.expected_image_size.width,
-                yc / self.expected_image_size.height,
-                w / self.expected_image_size.width,
-                h / self.expected_image_size.height,
-            ]
-
-            vector = self._create_object_vector(
-                new_bbox_norm, category, self.expected_image_size.width
+            position_in_tensor = self._calculate_position_in_tensor_from_grid(
+                position_x, position_y
             )
+            # NOTE - objects can be replaced in case they belong to the same grid cell
+            dst_tensor[position_in_tensor, :] = vector
+        return dst_tensor
 
-            vectors_for_output.append((vector, area))
-        return vectors_for_output
+    def _transform_annotation_into_vector(
+        self,
+        annotation: Dict[str, Any],
+        fixed_ratio_components: mnn_resize_fixed_ratio.ResizeFixedRatioComponents,
+        padding_percent: float,
+    ) -> torch.Tensor:
+        x1_norm, y1_norm, w_norm, h_norm = annotation["normalized_bbox"]
+
+        x1 = x1_norm * fixed_ratio_components.resize_width
+        y1 = y1_norm * fixed_ratio_components.resize_height
+        w = w_norm * fixed_ratio_components.resize_width
+        h = h_norm * fixed_ratio_components.resize_height
+        x1, y1, w, h = self.map_bbox_to_padded_image(
+            x1, y1, w, h, fixed_ratio_components, padding_percent
+        )
+        xc = x1 + w / 2
+        yc = y1 + h / 2
+
+        new_bbox_norm = [
+            xc / self.expected_image_size.width,
+            yc / self.expected_image_size.height,
+            w / self.expected_image_size.width,
+            h / self.expected_image_size.height,
+        ]
+        xc_norm = new_bbox_norm[0]
+        yc_norm = new_bbox_norm[1]
+        position_x, position_y = self._calculate_position_in_grid(xc_norm, yc_norm)
+        xc_in_grid_norm = self._calculate_coordinate_in_grid(xc_norm, position_x)
+        yc_in_grid_norm = self._calculate_coordinate_in_grid(yc_norm, position_y)
+        new_bbox_norm[0] = xc_in_grid_norm
+        new_bbox_norm[1] = yc_in_grid_norm
+
+        category = int(annotation["category_id"]) - 1
+        vector = self._create_object_vector(
+            new_bbox_norm, category, self.expected_image_size.width
+        )
+        return vector, position_x, position_y
 
     def get_output_tensor(
         self,
@@ -621,15 +659,141 @@ class COCOInstances2017Ordinal3(BaseCOCOInstances2017Ordinal):
             (self.expected_image_size.height, self.expected_image_size.width)
         )
 
-        # Add whole image as a bounding box
-        self._make_annotations_to_vectors_and_place_in_output_tensor(
-            dst_tensor=output_tensor_bboxes,
-            annotations=annotations,
-            fixed_ratio_components=fixed_ratio_components,
-            padding_percent=padding_percent,
-        )
+        for i, annotation in enumerate(annotations):
+            category = int(annotation["category_id"]) - 1
+            if self.desired_classes is not None and not (
+                self.desired_classes[0] <= category <= self.desired_classes[-1]
+            ):
+                continue
+
+            x1_norm, y1_norm, w_norm, h_norm = annotation["normalized_bbox"]
+
+            area = w_norm * h_norm
+            # Skip very small bboxes. Bad annotations
+            if area < 0.0004:
+                continue
+            # Skip very close to image borders bboxes. Bad annotations
+            if (
+                x1_norm > 0.99
+                or y1_norm > 0.99
+                or (x1_norm + w_norm) <= 0.01
+                or (y1_norm + h_norm) <= 0.01
+            ):
+                continue
+
+            vector, position_x, position_y = self._transform_annotation_into_vector(
+                annotation, fixed_ratio_components, padding_percent
+            )
+            position_in_tensor = (
+                position_y * self.grid_S + position_x
+            )  # in 'height' dimension
+            output_tensor_bboxes[position_in_tensor, :] = vector
 
         return output_tensor_bboxes
+
+    def _decode_coordinate_vector_norm(self, vector: torch.Tensor) -> int:
+        vector_size = vector.shape[0]
+        idx = torch.argmax(vector).item()
+        return idx / (vector_size - 1)
+
+    def decode_output_tensor(
+        self, y: torch.Tensor, filter_by_objectness_score: bool = False
+    ):
+        objects = y
+        _coord_step = self.bbox_vector_size // 4
+        h, w = self.expected_image_size.height, self.expected_image_size.width
+        bboxes = []
+        categories = []
+        objectness_scores = []
+        for i, o in enumerate(objects):
+            objectness_score = o[-1]
+            total_classes = len(self.classes)
+            vector_size = len(o)
+            idx_bbox = vector_size - (total_classes + 1)
+            bbox_raw = o[:idx_bbox]
+            xc_norm_in_grid_cell = self._decode_coordinate_vector_norm(
+                bbox_raw[:_coord_step]
+            )
+            yc_norm_in_grid_cell = self._decode_coordinate_vector_norm(
+                bbox_raw[_coord_step : 2 * _coord_step]
+            )
+            w0 = self._decode_coordinate_vector(
+                bbox_raw[2 * _coord_step : 3 * _coord_step], w
+            )
+            h0 = self._decode_coordinate_vector(
+                bbox_raw[3 * _coord_step : 4 * _coord_step], h
+            )
+
+            Sx, Sy = self._calculate_position_in_grid_from_tensor(i)
+            step_x_in_pixels = w // self.grid_S
+            step_y_in_pixels = h // self.grid_S
+            xc = int((Sx + xc_norm_in_grid_cell) * step_x_in_pixels)
+            yc = int((Sy + yc_norm_in_grid_cell) * step_y_in_pixels)
+
+            if all(x == 0 for x in [xc, yc, w0, h0]):
+                continue
+
+            bbox = [xc, yc, w0, h0]
+            idx_category = idx_bbox + total_classes
+            category = torch.argmax(o[idx_bbox:idx_category])
+            bboxes.append(bbox)
+            categories.append(category)
+            objectness_scores.append(objectness_score.item())
+
+        return bboxes, categories, objectness_scores
+
+    def filter_low_objectness(
+        self, y: torch.Tensor, objectness_threshold: float
+    ) -> torch.Tensor:
+        for i in range(y.shape[0]):
+            obj = y[i]
+            objectness_score = obj[-1]
+            if objectness_score < objectness_threshold:
+                y[i] = torch.zeros_like(obj)
+        return y
+
+    def write_image_with_model_output(
+        self, model_output: torch.Tensor, image: torch.Tensor, sub_dir: str
+    ):
+        model_output = self.filter_low_objectness(model_output, 0.75)
+        bboxes, categories, objectness_scores = self.decode_output_tensor(model_output)
+
+        validation_img = image.detach().cpu()
+        validation_img = validation_img.permute(1, 2, 0)
+        image = (validation_img.numpy() * 255).astype("uint8")
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+        for bbox, category, confidence in zip(bboxes, categories, objectness_scores):
+            if confidence <= 0.001:
+                continue
+
+            xc, yc, w, h = bbox
+            x1 = int(xc - w / 2)
+            y1 = int(yc - h / 2)
+            x2 = x1 + int(w)
+            y2 = y1 + int(h)
+            cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+            category_no = category.item()
+            cat = (
+                f"{category_no} - {confidence:.3f}"
+                if category_no < 1.0
+                else f"{category_no}"
+            )
+            cv2.putText(
+                image,
+                cat,
+                (x1, y1),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                1,
+                (255, 0, 0),
+                2,
+                cv2.LINE_AA,
+            )
+
+        # reverse mask
+        os.makedirs(f"assessment_images/{sub_dir}", exist_ok=True)
+        cv2.imwrite(f"assessment_images/{sub_dir}/bboxed_image.jpg", image)
 
 
 def write_image_with_output(

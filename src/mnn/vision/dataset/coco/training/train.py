@@ -6,6 +6,7 @@ import torch
 import torch.utils.tensorboard
 
 
+from mnn.vision.dataset.coco.base import BaseCOCODatasetGrouped
 from mnn.vision.dataset.coco.experiments.detection_fading_bboxes_in_mask import (
     COCOInstances2017FBM,
 )
@@ -47,8 +48,8 @@ def default_train_val_datasets(
 
 
 def train_val(
-    train_dataset: torch.utils.data.Dataset,
-    val_dataset: torch.utils.data.Dataset,
+    train_dataset: BaseCOCODatasetGrouped,
+    val_dataset: BaseCOCODatasetGrouped,
     object_detection_model: torch.nn.Module,
     loss_fn: torch.nn.Module,
     optimizer: torch.optim.Optimizer,
@@ -73,12 +74,13 @@ def train_val(
         device = torch.device("cpu")
 
     # Prepare validation image
-    validation_image = mnn_coco_training_utils.prepare_validation_image(
-        validation_image_path, object_detection_model.expected_image_size
-    ).to(device, dtype=hyperparameters_config.floating_point_precision)
-    temp_out = object_detection_model(validation_image)
-    mnn_coco_training_utils.write_image_with_output_of_experiment2(
-        temp_out, validation_image, "pre-session_prediction"
+    validation_image, _ = val_dataset[0]
+    validation_image = validation_image.unsqueeze(0).to(
+        device, dtype=hyperparameters_config.floating_point_precision
+    )
+    presession_prediction = object_detection_model(validation_image).squeeze(0)
+    train_dataset.write_image_with_model_output(
+        presession_prediction, validation_image.squeeze(0), "pre-session_prediction"
     )
 
     # Prepare data loaders
@@ -120,7 +122,7 @@ def train_val(
             writer=writer,
             log_rate=log_rate,
             model_save_path=model_between_epoch_save_path,
-            scheduler=scheduler # TODO MAKE TYPES RIGHT
+            scheduler=scheduler,  # TODO MAKE TYPES RIGHT
         )
 
         model_state = object_detection_model.state_dict()
