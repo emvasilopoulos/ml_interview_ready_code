@@ -36,7 +36,7 @@ def train_one_epoch(
     ).to(device, dtype=hyperparameters_config.floating_point_precision)
 
     val_counter = 0
-    tqdm_obj = tqdm.tqdm(train_loader, desc="Training | Loss: 0 | IoU-0.5: 0")
+    tqdm_obj = tqdm.tqdm(train_loader, desc="Training | Loss: 0")
     for i, (image_batch, target0) in enumerate(tqdm_obj):
         image_batch = image_batch.to(
             device=device,
@@ -71,24 +71,12 @@ def train_one_epoch(
         # Log metrics
         training_step = i + current_epoch * len(train_loader)
         current_loss = loss.item()
-        current_iou_05 = (
-            mnn_metrics.calculate_iou_batch(output, target0, threshold=0.5)
-            .mean()
-            .item()
-        )
-        tqdm_obj.set_description(
-            f"Training | Loss: {current_loss:.4f} | IoU-0.5: {current_iou_05:.4f}"
-        )
+
+        tqdm_obj.set_description(f"Training | Loss: {loss_fn.latest_loss_to_tqdm()}")
         if writer is not None:
             writer.add_scalar("Loss/train", current_loss, training_step)
-            writer.add_scalar(
-                "IoU_0.5/train",
-                current_iou_05,
-                training_step,
-            )
 
         running_loss += current_loss
-        running_iou_05 += current_iou_05
         if i % log_rate == 0:
             model_state = model.state_dict()
             model_state["epoch"] = current_epoch
@@ -113,6 +101,11 @@ def train_one_epoch(
                 image_batch[0],
                 "train_image_ground_truth",
             )
+            train_loader.dataset.write_image_with_model_output(
+                output[0],
+                image_batch[0],
+                "train_image_pred",
+            )
             val_counter += 1
     return last_loss
 
@@ -131,7 +124,7 @@ def val_once(
     with torch.no_grad():
         running_loss = 0
         running_iou_05 = 0
-        tqdm_obj = tqdm.tqdm(val_loader, desc="Validation | Loss: 0 | IoU-0.5: 0")
+        tqdm_obj = tqdm.tqdm(val_loader, desc="Validation | Loss: 0")
         for i, (image_batch, target0) in enumerate(tqdm_obj):
             image_batch = image_batch.to(
                 device=device,
@@ -149,25 +142,14 @@ def val_once(
             loss = loss_fn(output, target0)
 
             current_loss = loss.item()
-            current_iou_05 = (
-                mnn_metrics.calculate_iou_batch(output, target0, threshold=0.5)
-                .mean()
-                .item()
-            )
             validation_step = i + current_epoch * len(val_loader)
             tqdm_obj.set_description(
-                f"Validation | Loss: {current_loss:.4f} | IoU-0.5: {current_iou_05:.4f}"
+                f"Validation | Loss: {loss_fn.latest_loss_to_tqdm()}"
             )
             if writer is not None:
                 writer.add_scalar("Loss/val", current_loss, validation_step)
-                writer.add_scalar(
-                    "IoU_0.5/val",
-                    current_iou_05,
-                    i + current_epoch * len(val_loader),
-                )
 
             running_loss += current_loss
-            running_iou_05 += current_iou_05
             if i % log_rate == 0 and i > 0:
                 last_loss = running_loss / log_rate
         return last_loss

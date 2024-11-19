@@ -133,7 +133,7 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
         )
 
         # Random padding that both input & output must know about
-        padding_percent = self._random_percentage()
+        padding_percent = 0
         pad_value = random.random()
 
         # Prepare output based on expected image size & padding that will be applied in image

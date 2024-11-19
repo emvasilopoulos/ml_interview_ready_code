@@ -9,7 +9,7 @@ class FocalLoss(torch.nn.Module):
         self.gamma = gamma
         self.bce_loss = torch.nn.BCELoss()
 
-    def forward(self, inputs, targets):
+    def forward(self, inputs, targets) -> torch.Tensor:
         p = inputs
         ce_loss = self.bce_loss(inputs, targets)
         p_t = p * targets + (1 - p) * (1 - targets)

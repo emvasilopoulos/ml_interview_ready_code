@@ -152,10 +152,6 @@ def bbox_iou(box1, box2, xywh=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-7
         w2, h2 = b2_x2 - b2_x1, b2_y2 - b2_y1 + eps
 
     # Intersection area
-    LOGGER.info(f"b1_x1: {b1_x1.shape}")
-    LOGGER.info(f"b2_x1: {b2_x1.shape}")
-    LOGGER.info(f"b1_x2: {b1_x2.shape}")
-    LOGGER.info(f"b2_x2: {b2_x2.shape}")
     inter = (b1_x2.minimum(b2_x2) - b1_x1.maximum(b2_x1)).clamp_(0) * (
         b1_y2.minimum(b2_y2) - b1_y1.maximum(b2_y1)
     ).clamp_(0)
