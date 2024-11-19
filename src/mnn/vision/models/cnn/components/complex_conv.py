@@ -63,12 +63,50 @@ class ConvBnBlock(torch.nn.Module):
     ):
 
         super().__init__()
-
+        self.output_channels = 128 + 64 + 32
         self.block = torch.nn.ModuleList(
             [
                 ConvBn(in_channels, 32, kernel=kernel, stride=stride, padding=padding),
                 ConvBn(in_channels, 64, kernel=kernel, stride=stride, padding=padding),
                 ConvBn(in_channels, 128, kernel=kernel, stride=stride, padding=padding),
+            ]
+        )
+
+    def forward(self, x):
+        xs = [conv(x) for conv in self.block]
+        return torch.cat(xs, dim=1)
+
+
+class ConvBnBlock2(torch.nn.Module):
+
+    def __init__(
+        self, in_channels: int, kernel: int = 3, stride: int = 1, padding: int = 0
+    ):
+        super().__init__()
+        self.output_channels = 128 + 64 + 32
+        self.block = torch.nn.ModuleList(
+            [
+                torch.nn.Sequential(
+                    ConvBn(
+                        in_channels, 32, kernel=kernel, stride=stride, padding=padding
+                    ),
+                    ConvBn(32, 64, kernel=kernel, stride=stride, padding=padding),
+                    ConvBn(64, 128, kernel=kernel, stride=stride, padding=padding),
+                ),
+                torch.nn.Sequential(
+                    ConvBn(
+                        in_channels, 128, kernel=kernel, stride=stride, padding=padding
+                    ),
+                    ConvBn(128, 64, kernel=kernel, stride=stride, padding=padding),
+                    ConvBn(64, 32, kernel=kernel, stride=stride, padding=padding),
+                ),
+                torch.nn.Sequential(
+                    ConvBn(
+                        in_channels, 64, kernel=kernel, stride=stride, padding=padding
+                    ),
+                    ConvBn(64, 128, kernel=kernel, stride=stride, padding=padding),
+                    ConvBn(128, 64, kernel=kernel, stride=stride, padding=padding),
+                ),
             ]
         )
 
