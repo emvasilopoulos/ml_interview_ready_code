@@ -33,7 +33,7 @@ class ConvBn(torch.nn.Module):
         padding: int = None,
         groups: int = 1,
         dilation: int = 1,
-        activation: torch.nn.Module = torch.nn.SiLU(),
+        activation: torch.nn.Module = torch.nn.SiLU(inplace=True),
     ):
         super().__init__()
         self.conv = torch.nn.Conv2d(
@@ -46,7 +46,7 @@ class ConvBn(torch.nn.Module):
             dilation=dilation,
             bias=False,
         )
-        self.bn = torch.nn.BatchNorm2d(out_channels)
+        self.bn = torch.nn.BatchNorm2d(out_channels, eps=0.001, momentum=0.03)
         self.activation = activation
 
     def forward(self, x):
@@ -78,34 +78,40 @@ class ConvBnBlock(torch.nn.Module):
 
 
 class ConvBnBlock2(torch.nn.Module):
+    channel_schemes = {
+        "small": [32, 64, 128],
+        "medium": [64, 128, 256],
+        "large": [128, 256, 512],
+        "huge": [256, 512, 1024],
+    }
 
     def __init__(
-        self, in_channels: int, kernel: int = 3, stride: int = 1, padding: int = 0
+        self,
+        in_channels: int,
+        kernel: int = 3,
+        stride: int = 1,
+        padding: int = 0,
+        channel_scheme: str = "small",
     ):
         super().__init__()
-        self.output_channels = 128 + 64 + 32
+        high, mid, low = self.channel_schemes[channel_scheme]
+        self.output_channels = high + mid + low
         self.block = torch.nn.ModuleList(
             [
                 torch.nn.Sequential(
-                    ConvBn(
-                        in_channels, 32, kernel=kernel, stride=stride, padding=padding
-                    ),
-                    ConvBn(32, 64, kernel=kernel, stride=stride, padding=padding),
-                    ConvBn(64, 128, kernel=kernel, stride=stride, padding=padding),
+                    ConvBn(in_channels, low, kernel=3, stride=1, padding=1),
+                    ConvBn(low, mid, kernel=3, stride=1, padding=1),
+                    ConvBn(mid, high, kernel=kernel, stride=stride, padding=padding),
                 ),
                 torch.nn.Sequential(
-                    ConvBn(
-                        in_channels, 128, kernel=kernel, stride=stride, padding=padding
-                    ),
-                    ConvBn(128, 64, kernel=kernel, stride=stride, padding=padding),
-                    ConvBn(64, 32, kernel=kernel, stride=stride, padding=padding),
+                    ConvBn(in_channels, high, kernel=3, stride=1, padding=1),
+                    ConvBn(high, mid, kernel=3, stride=1, padding=1),
+                    ConvBn(mid, low, kernel=kernel, stride=stride, padding=padding),
                 ),
                 torch.nn.Sequential(
-                    ConvBn(
-                        in_channels, 64, kernel=kernel, stride=stride, padding=padding
-                    ),
-                    ConvBn(64, 128, kernel=kernel, stride=stride, padding=padding),
-                    ConvBn(128, 64, kernel=kernel, stride=stride, padding=padding),
+                    ConvBn(in_channels, mid, kernel=3, stride=1, padding=1),
+                    ConvBn(mid, high, kernel=3, stride=1, padding=1),
+                    ConvBn(high, mid, kernel=kernel, stride=stride, padding=padding),
                 ),
             ]
         )
@@ -115,8 +121,42 @@ class ConvBnBlock2(torch.nn.Module):
         return torch.cat(xs, dim=1)
 
 
+EXPECTED_OUTPUT_RESOLUTION = {
+    "same": {
+        "kernel": 3,
+        "stride": 1,
+        "padding": 1,
+        "dilation": 1,
+    },
+    "half": {
+        "kernel": 3,
+        "stride": 2,
+        "padding": 1,
+        "dilation": 1,
+    },
+    "third": {
+        "kernel": 3,
+        "stride": 3,
+        "padding": 1,
+        "dilation": 1,
+    },
+    "quarter": {
+        "kernel": 3,
+        "stride": 4,
+        "padding": 1,
+        "dilation": 1,
+    },
+}
 if __name__ == "__main__":
-    model = ConvBnBlock(3)
+    # model = ConvBnBlock2(
+    #     3, kernel=3, stride=1, padding=1
+    # )  # keeps dimensions | output_channels = 224
+    model = torch.nn.Sequential(
+        ConvBnBlock2(3, 1, 1),  # keeps dimensions | output_channels = 224
+        ConvBnBlock2(
+            224, kernel=3, stride=4, padding=1
+        ),  # downsample | output_channels = 224
+    )
     x = torch.rand(1, 3, 576, 576)
     y = model(x)
     print(y.shape)
