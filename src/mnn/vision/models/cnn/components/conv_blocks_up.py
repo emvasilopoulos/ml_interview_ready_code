@@ -1,11 +1,11 @@
 import torch
 import mnn.vision.models.cnn.components.conv_blocks_down as mnn_conv_blocks_down
+import mnn.vision.models.cnn.components.base as mnn_base
 
-
-class ConvUpBlock(torch.nn.Module):
+class ConvUpBlock(mnn_base.MNNConv):
 
     def __init__(self, in_channels: int):
-        super().__init__()
+        super().__init__(in_channels, in_channels)
         self.cv_same = mnn_conv_blocks_down.ConvBn(
             in_channels, in_channels, kernel=3, stride=1, padding=1
         )
@@ -17,7 +17,6 @@ class ConvUpBlock(torch.nn.Module):
         self.cv_wide_tall = mnn_conv_blocks_down.ConvBn(
             in_channels, in_channels, kernel=3, stride=1, padding=1
         )
-        self.output_channels = in_channels
 
     def forward(self, x):
         x0 = self.cv_same(x)

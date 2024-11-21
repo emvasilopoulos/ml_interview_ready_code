@@ -1,202 +1,91 @@
 import time
 import torch
 
+import mnn.vision
+import mnn.vision.image_size
 import mnn.vision.models.cnn.components.conv_blocks_down as mnn_conv_blocks_down
 import mnn.vision.models.cnn.components.conv_blocks_up as mnn_conv_blocks_up
+import mnn.torch_utils
 
+module_timer = mnn.torch_utils.ModuleTimer()
 
-class Vanilla(torch.nn.Module):
+class Vanilla576(torch.nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.image_width = 576
-        self.image_height = 576
-        self.image_channels = 3
+        self.expected_image_size = mnn.vision.image_size.ImageSize(576, 576)
+        self.output_shape = mnn.vision.image_size.ImageSize(324, 324)
+        self.image_channels = self.expected_image_size.channels
 
         """ Down Sampling """
-        cv_down0 = mnn_conv_blocks_down.ConvBnBlock2(
-            3, kernel=3, stride=1, padding=1, channel_scheme="small"
+        # 1 - scale down
+        self.same1 = mnn_conv_blocks_down.ConvBn(
+            self.image_channels, out_channels=16, kernel=3, stride=1, padding=1
         )
-        cv_down1 = mnn_conv_blocks_down.ConvBnBlock2(
-            cv_down0.output_channels,
-            kernel=3,
-            stride=2,
-            padding=1,
-            channel_scheme="medium",
-        )  # cuts in half --> 288x288
-        self.down1 = torch.nn.Sequential(
-            cv_down0,
-            cv_down1,
+        self.same2 = mnn_conv_blocks_down.ConvBn(
+            self.same1.out_channels, out_channels=32, kernel=3, stride=1, padding=1
+        )
+        self.same3 = mnn_conv_blocks_down.ConvBn(
+            self.same2.out_channels, out_channels=64, kernel=3, stride=1, padding=1
+        )
+        self.down1 = mnn_conv_blocks_down.ConvBn(
+            self.same3.out_channels, out_channels=128, kernel=3, stride=2, padding=1
+        ) # cuts resolution in half --> 288x288
+
+        # 2 - scale down
+        self.down2 = mnn_conv_blocks_down.ConvBn(
+            self.down1.out_channels, 256, kernel=3, stride=2, padding=1
+        ) # cuts in half --> 144x144
+
+        # bottleneck
+        self.down_bootleneck2 = mnn_conv_blocks_down.Bottleneck(self.down2.out_channels)
+
+        # 3 - scale down
+        self.down3 = mnn_conv_blocks_down.ConvBn(
+            self.down_bootleneck2.out_channels, 512, kernel=3, stride=2, padding=1
+        )
+        self.down_bootleneck3 = mnn_conv_blocks_down.Bottleneck(self.down3.out_channels)
+
+        """ SPP """
+        self.spp = mnn_conv_blocks_down.SPP(self.down_bootleneck3.out_channels, out_channels=1024)
+
+        self.pre_head0 = mnn_conv_blocks_down.ConvBn(
+            self.spp.out_channels, out_channels=1024, kernel=3, stride=4, padding=1
+        )
+        self.pre_head1 = mnn_conv_blocks_down.Bottleneck(
+            self.pre_head0.out_channels
+        )
+        self.head = mnn_conv_blocks_down.ConvBn(
+            self.pre_head1.out_channels, out_channels=324, kernel=3, stride=1, padding=1, activation=torch.nn.Sigmoid()
         )
 
-        cv_down2 = mnn_conv_blocks_down.ConvBnBlock2(
-            cv_down1.output_channels,
-            kernel=3,
-            stride=1,
-            padding=1,
-            channel_scheme="medium",
-        )
-        cv_down3 = mnn_conv_blocks_down.ConvBnBlock2(
-            cv_down2.output_channels,
-            kernel=3,
-            stride=2,
-            padding=1,
-            channel_scheme="medium",
-        )  # cuts in half --> 144x144
-        self.down2 = torch.nn.Sequential(
-            cv_down2,
-            cv_down3,
-        )
-
-        cv_down4 = mnn_conv_blocks_down.ConvBnBlock2(
-            cv_down3.output_channels,
-            kernel=3,
-            stride=1,
-            padding=1,
-            channel_scheme="medium",
-        )
-        cv_down5 = mnn_conv_blocks_down.ConvBnBlock2(
-            cv_down4.output_channels,
-            kernel=3,
-            stride=2,
-            padding=1,
-            channel_scheme="small",
-        )  # cuts in half --> 72x72
-        self.down3 = torch.nn.Sequential(
-            cv_down4,
-            cv_down5,
-            mnn_conv_blocks_down.ConvBn(
-                cv_down5.output_channels, 64, kernel=3, stride=1, padding=1
-            ),
-        )
-
-        """ Up Sampling """
-        self.upsample3 = mnn_conv_blocks_up.ConvUpBlock(64)
-        after_cat_channels = self.upsample3.output_channels + cv_down3.output_channels
-
-        self.conv_same_3 = mnn_conv_blocks_down.ConvBnBlock2(
-            after_cat_channels, kernel=3, stride=1, padding=1, channel_scheme="small"
-        )
-        self.conv_same_3_1 = mnn_conv_blocks_down.ConvBn(
-            self.conv_same_3.output_channels, 128, kernel=3, stride=1, padding=1
-        )
-        self.conv_same_3_2 = mnn_conv_blocks_down.ConvBn(
-            128, 64, kernel=3, stride=1, padding=1
-        )
-
-        self.upsample2 = mnn_conv_blocks_up.ConvUpBlock(64)
-        after_cat_channels = self.upsample2.output_channels + cv_down1.output_channels
-        self.conv_same_2 = mnn_conv_blocks_down.ConvBnBlock2(
-            after_cat_channels, kernel=3, stride=1, padding=1, channel_scheme="small"
-        )
-        self.conv_same_2_1 = mnn_conv_blocks_down.ConvBn(
-            self.conv_same_2.output_channels, 64, kernel=3, stride=1, padding=1
-        )
-        self.conv_same_2_2 = mnn_conv_blocks_down.ConvBn(
-            128, 64, kernel=3, stride=1, padding=1
-        )
-
-        """ Final Layer """
-        cv_final0 = mnn_conv_blocks_down.ConvBnBlock2(64, 1, 1)
-        cv_final1_out_channels = 256
-        cv_final1 = mnn_conv_blocks_down.ConvBn(
-            cv_final0.output_channels,
-            out_channels=cv_final1_out_channels,
-            kernel=3,
-            stride=1,
-            padding=1,
-        )
-        cv_final2 = mnn_conv_blocks_down.ConvBn(
-            cv_final1_out_channels,
-            out_channels=1,
-            kernel=3,
-            stride=1,
-            padding=1,
-        )
-        self.final_module = torch.nn.Sequential(
-            cv_final0,
-            cv_final1,
-            cv_final2,
-        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x_down1 = self.down1(x)
-        x_down2 = self.down2(x_down1)
-        x_down3 = self.down3(x_down2)
-
-        x_up2 = self.upsample3(x_down3)
-        x_up2 = torch.cat([x_down2, x_up2], dim=1)
-        x_up2 = self.conv_same_3(x_up2)
-        x_up2 = self.conv_same_3_1(x_up2)
-        x_up2 = self.conv_same_3_2(x_up2)
-
-        x_up1 = self.upsample2(x_up2)
-        x_up1 = torch.cat([x_down1, x_up1], dim=1)
-        x_up1 = self.conv_same_2(x_up1)
-        x_up1 = self.conv_same_2_1(x_up1)
-        x_up1 = self.conv_same_2_2(x_up1)
-
-        y = self.final_module(x_up1)
-        return y.squeeze(dim=1)
-
-    def time_forward(self, x: torch.Tensor) -> torch.Tensor:
-
-        t0 = time.time()
-        x_down1 = self.down1(x)
-        torch.cuda.synchronize()
-        t1 = time.time()
-        print(f"self.down1: {t1 - t0:.2f} seconds")
-
-        t0 = time.time()
-        x_down2 = self.down2(x_down1)
-        torch.cuda.synchronize()
-        t1 = time.time()
-        print(f"self.down2: {t1 - t0:.2f} seconds")
-
-        t0 = time.time()
-        x_down3 = self.down3(x_down2)
-        torch.cuda.synchronize()
-        t1 = time.time()
-        print(f"self.down3: {t1 - t0:.2f} seconds")
-
-        t0 = time.time()
-        x_up2 = self.upsample3(x_down3)
-        x_up2 = torch.cat([x_down2, x_up2], dim=1)
-        torch.cuda.synchronize()
-        t1 = time.time()
-        print(f"up3: {t1 - t0:.2f} seconds")
-
-        t0 = time.time()
-        x_up1 = self.upsample2(x_up2)
-        x_up1 = torch.cat([x_down1, x_up1], dim=1)
-        torch.cuda.synchronize()
-        t1 = time.time()
-        print(f"up2: {t1 - t0:.2f} seconds")
-
-        t0 = time.time()
-        y = self.final_module(x_up1)
-        torch.cuda.synchronize()
-        t1 = time.time()
-        print(f"up1: {t1 - t0:.2f} seconds")
-        return y.squeeze(dim=1)
+        x = self.same1(x)
+        x = self.same2(x)
+        x = self.same3(x)
+        x = self.down1(x)
+        x = self.down2(x)
+        x = self.down_bootleneck2(x)
+        x = self.down3(x)
+        x = self.down_bootleneck3(x)
+        x = self.spp(x)
+        x = self.pre_head0(x)
+        x = self.pre_head1(x)
+        x = self.head(x)
+        return x.view(x.shape[0], x.shape[1], -1)
 
 
 if __name__ == "__main__":
     import mnn.torch_utils
     import time
 
-    model = Vanilla()
+    model = Vanilla576()
     model.to(device=0)
-    with torch.no_grad():
-        for _ in range(10):
-            t0 = time.time()
-            x = torch.rand((4, 3, 576, 576), device="cuda")
-            y = model(x)
-            torch.cuda.synchronize()
-            t1 = time.time()
-            print(f"Time: {t1 - t0:.2f} seconds")
-
-        print(y.shape)
-        print(
-            f"Created model with {mnn.torch_utils.count_parameters(model) / (10 ** 6):.2f} million parameters"
-        )
+    for _ in range(100):
+        t0 = time.time()
+        x = torch.rand((2, 3, 576, 576), device="cuda")
+        y = model(x)
+        torch.cuda.synchronize()
+        t1 = time.time()
+        print("Time taken:", t1 - t0, "seconds | shape:", y.shape)

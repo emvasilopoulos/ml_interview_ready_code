@@ -88,3 +88,20 @@ def inference_test(image: torch.Tensor, model: torch.nn.Module):
 
 def count_parameters(model) -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+class ModuleTimer:
+    message = ""
+
+    def set_message(self, message: str):
+        self.message = message
+
+    def __enter__(self):
+        self.start = time.time()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        torch.cuda.synchronize()
+        self.end = time.time()
+        if self.message:
+            print(self.message, end=" | ")
+        print(f"Time taken: {self.end - self.start:.4f} seconds")
+        return False

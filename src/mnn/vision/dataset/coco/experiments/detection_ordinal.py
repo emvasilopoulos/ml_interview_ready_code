@@ -59,13 +59,19 @@ class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
         data_dir: pathlib.Path,
         split: str,
         expected_image_size: mnn.vision.image_size.ImageSize,
+        output_shape: mnn.vision.image_size.ImageSize = None,
     ):
+        if output_shape is None:
+            self.output_shape = expected_image_size
+        else:
+            self.output_shape = output_shape
+
         # 79 classes
         self.classes = [i for i in range(self.N_CLASSES)]
         super().__init__(data_dir, split, expected_image_size, self.classes)
 
         self.bbox_vector_size = self._calculate_bbox_vector_size(
-            expected_image_size
+            self.output_shape
         )  # -1 for the objectness score
         if self.bbox_vector_size % 4 != 0:
             raise ValueError(
@@ -74,7 +80,7 @@ class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
         """
         NOTE: the model will learn to detect up to a certain number of objects and not more than that
         """
-        self.max_objects = expected_image_size.width - 1
+        self.max_objects = output_shape.width - 1
         # Why -1? Because the first vector is the number of objects in the image
         # The rest of the vectors are used to predict the objects
 
@@ -235,14 +241,17 @@ class COCOInstances2017Ordinal3(BaseCOCOInstances2017Ordinal):
         data_dir: pathlib.Path,
         split: str,
         expected_image_size: mnn.vision.image_size.ImageSize,
+        output_shape: mnn.vision.image_size.ImageSize = None,
     ):
-        super().__init__(data_dir, split, expected_image_size)
-        if self.expected_image_size.height ** (1 / 2) % 1 != 0:
+        super().__init__(
+            data_dir, split, expected_image_size, output_shape=output_shape
+        )
+        if self.output_shape.height ** (1 / 2) % 1 != 0:
             raise ValueError(
                 f"The square root of the height of the expected image size for '{__class__}' should be an integer."
             )
 
-        self.grid_S = int(self.expected_image_size.height ** (1 / 2))
+        self.grid_S = int(self.output_shape.height ** (1 / 2))
 
     def _calculate_position_in_grid(
         self, xc_norm: float, yc_norm: float
@@ -330,10 +339,10 @@ class COCOInstances2017Ordinal3(BaseCOCOInstances2017Ordinal):
         xc = x1 + w / 2
         yc = y1 + h / 2
         new_bbox_norm = [
-            xc / self.expected_image_size.width,
-            yc / self.expected_image_size.height,
-            w / self.expected_image_size.width,
-            h / self.expected_image_size.height,
+            xc / self.output_shape.width,
+            yc / self.output_shape.height,
+            w / self.output_shape.width,
+            h / self.output_shape.height,
         ]
         xc_norm = new_bbox_norm[0]
         yc_norm = new_bbox_norm[1]
@@ -345,7 +354,7 @@ class COCOInstances2017Ordinal3(BaseCOCOInstances2017Ordinal):
 
         category = int(annotation["category_id"]) - 1
         vector = self._create_object_vector(
-            new_bbox_norm, category, self.expected_image_size.width
+            new_bbox_norm, category, self.output_shape.width
         )
         return vector, position_x, position_y
 
@@ -357,7 +366,7 @@ class COCOInstances2017Ordinal3(BaseCOCOInstances2017Ordinal):
         current_image_size: Optional[mnn.vision.image_size.ImageSize] = None,
     ) -> torch.Tensor:
         output_tensor_bboxes = torch.zeros(
-            (self.expected_image_size.height, self.expected_image_size.width)
+            (self.output_shape.height, self.output_shape.width)
         )
 
         for i, annotation in enumerate(annotations):
@@ -393,7 +402,7 @@ class COCOInstances2017Ordinal3(BaseCOCOInstances2017Ordinal):
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         objects = y
         _coord_step = self.bbox_vector_size // 4
-        h, w = self.expected_image_size.height, self.expected_image_size.width
+        h, w = self.output_shape.height, self.output_shape.width
         bboxes = []
         categories = []
         confidence_scores = []
@@ -501,18 +510,14 @@ class COCOInstances2017Ordinal3(BaseCOCOInstances2017Ordinal):
 
         xc_norm_in_grid_cell = self._decode_coordinate_vector_norm_batch(xc_ordinals)
         yc_norm_in_grid_cell = self._decode_coordinate_vector_norm_batch(yc_ordinals)
-        w0 = self._decode_coordinate_vector_batch(
-            w_ordinals, self.expected_image_size.width
-        )
-        h0 = self._decode_coordinate_vector_batch(
-            h_ordinals, self.expected_image_size.height
-        )
+        w0 = self._decode_coordinate_vector_batch(w_ordinals, self.output_shape.width)
+        h0 = self._decode_coordinate_vector_batch(h_ordinals, self.output_shape.height)
 
         Sx, Sy = self._calculate_positions_in_grid(
             torch.arange(y.shape[1], device=y.device)
         )
-        step_x_in_pixels = self.expected_image_size.width // self.grid_S
-        step_y_in_pixels = self.expected_image_size.height // self.grid_S
+        step_x_in_pixels = self.output_shape.width // self.grid_S
+        step_y_in_pixels = self.output_shape.height // self.grid_S
         xc = (Sx + xc_norm_in_grid_cell) * step_x_in_pixels
         yc = (Sy + yc_norm_in_grid_cell) * step_y_in_pixels
 
@@ -522,10 +527,10 @@ class COCOInstances2017Ordinal3(BaseCOCOInstances2017Ordinal):
         y1[y1 < 0] = 0
         x1[x1 > 1] = 1
         y1[y1 > 1] = 1
-        bboxes_as_mask[:, :, 0] = x1 / self.expected_image_size.width
-        bboxes_as_mask[:, :, 1] = y1 / self.expected_image_size.height
-        bboxes_as_mask[:, :, 2] = w0 / self.expected_image_size.width
-        bboxes_as_mask[:, :, 3] = h0 / self.expected_image_size.height
+        bboxes_as_mask[:, :, 0] = x1 / self.output_shape.width
+        bboxes_as_mask[:, :, 1] = y1 / self.output_shape.height
+        bboxes_as_mask[:, :, 2] = w0 / self.output_shape.width
+        bboxes_as_mask[:, :, 3] = h0 / self.output_shape.height
         bboxes_as_mask[bboxes_as_mask[:, :, 2] == 0] = 0
         bboxes_as_mask[bboxes_as_mask[:, :, 3] == 0] = 0
 
@@ -590,23 +595,30 @@ class COCOInstances2017Ordinal4(BaseCOCOInstances2017Ordinal):
     N_CLASSES = 80
 
     def _calculate_bbox_vector_size(
-        self, expected_image_size: mnn.vision.image_size.ImageSize
+        self, output_shape: mnn.vision.image_size.ImageSize
     ):
-        return expected_image_size.width - len(self.classes)
+        return output_shape.width - len(self.classes)
 
     def __init__(
         self,
         data_dir: pathlib.Path,
         split: str,
         expected_image_size: mnn.vision.image_size.ImageSize,
+        output_shape: mnn.vision.image_size.ImageSize = None,
     ):
-        super().__init__(data_dir, split, expected_image_size)
-        if self.expected_image_size.height ** (1 / 2) % 1 != 0:
+        raise NotImplementedError(
+            f"Fails when expected_image_size != output_shape. Grids are set correctly"
+            f"for 'target' but when trying to decode output it is mapped to 'target' shape so decoded bounding boxes are wrong."
+        )
+        super().__init__(
+            data_dir, split, expected_image_size, output_shape=output_shape
+        )
+        if self.output_shape.height ** (1 / 2) % 1 != 0:
             raise ValueError(
                 f"The square root of the height of the expected image size for '{__class__}' should be an integer."
             )
 
-        self.grid_S = int(self.expected_image_size.height ** (1 / 2))
+        self.grid_S = int(self.output_shape.height ** (1 / 2))
 
     def _create_object_vector(self, bbox: list[float], category: int, vector_size: int):
         """expecting bbox as x1, y1, x2, y2"""
@@ -668,24 +680,38 @@ class COCOInstances2017Ordinal4(BaseCOCOInstances2017Ordinal):
         lower_bound_y = int(yc_norm // step)
         return lower_bound_x, lower_bound_y
 
-    def _calculate_coordinate_in_grid(self, coord_norm: float, position: int) -> float:
-        step = 1 / self.grid_S
+    def _calculate_coordinate_in_grid(
+        self, coord_norm: float, position: int, grid_S=None
+    ) -> float:
+        if grid_S is None:
+            grid_S = self.grid_S
+        step = 1 / grid_S
         lower_bound = position * step
         return (coord_norm - lower_bound) / step
 
-    def _calculate_position_in_tensor_from_grid(self, x: int, y: int) -> int:
-        return y * self.grid_S + x
+    def _calculate_position_in_tensor_from_grid(
+        self, x: int, y: int, grid_S=None
+    ) -> int:
+        if grid_S is None:
+            grid_S = self.grid_S
+        return y * grid_S + x
 
-    def _calculate_position_in_grid_from_tensor(self, position: int) -> Tuple[int, int]:
-        y = position // self.grid_S
-        x = position % self.grid_S
+    def _calculate_position_in_grid_from_tensor(
+        self, position: int, grid_S=None
+    ) -> Tuple[int, int]:
+        if grid_S is None:
+            grid_S = self.grid_S
+        y = position // grid_S
+        x = position % grid_S
         return x, y
 
     def _calculate_positions_in_grid(
-        self, positions: torch.Tensor
+        self, positions: torch.Tensor, grid_S=None
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        y = positions // self.grid_S
-        x = positions % self.grid_S
+        if grid_S is None:
+            grid_S = self.grid_S
+        y = positions // grid_S
+        x = positions % grid_S
         return x, y
 
     def _make_annotations_to_vectors_and_place_in_output_tensor(
@@ -703,6 +729,16 @@ class COCOInstances2017Ordinal4(BaseCOCOInstances2017Ordinal):
                 continue
 
             x1_norm, y1_norm, w_norm, h_norm = annotation["normalized_bbox"]
+            if x1_norm > 1 or y1_norm > 1:
+                continue
+            if x1_norm < 0:
+                x1_norm = 0
+            if y1_norm < 0:
+                y1_norm = 0
+            if x1_norm + w_norm > 1:
+                w_norm = 1 - x1_norm
+            if y1_norm + h_norm > 1:
+                h_norm = 1 - y1_norm
 
             area = w_norm * h_norm
             # Skip very small bboxes. Bad annotations
@@ -746,13 +782,16 @@ class COCOInstances2017Ordinal4(BaseCOCOInstances2017Ordinal):
         xc = x1 + w / 2
         yc = y1 + h / 2
         new_bbox_norm = [
-            xc / self.expected_image_size.width,
-            yc / self.expected_image_size.height,
-            w / self.expected_image_size.width,
-            h / self.expected_image_size.height,
+            xc / self.output_shape.width,
+            yc / self.output_shape.height,
+            w / self.output_shape.width,
+            h / self.output_shape.height,
         ]
         xc_norm = new_bbox_norm[0]
         yc_norm = new_bbox_norm[1]
+        if any(x < 0 or x > 1 for x in new_bbox_norm):
+            return torch.zeros(self.bbox_vector_size), -1, -1
+
         position_x, position_y = self._calculate_position_in_grid(xc_norm, yc_norm)
         xc_in_grid_norm = self._calculate_coordinate_in_grid(xc_norm, position_x)
         yc_in_grid_norm = self._calculate_coordinate_in_grid(yc_norm, position_y)
@@ -761,7 +800,7 @@ class COCOInstances2017Ordinal4(BaseCOCOInstances2017Ordinal):
 
         category = int(annotation["category_id"]) - 1
         vector = self._create_object_vector(
-            new_bbox_norm, category, self.expected_image_size.width
+            new_bbox_norm, category, self.output_shape.width
         )
         return vector, position_x, position_y
 
@@ -773,7 +812,7 @@ class COCOInstances2017Ordinal4(BaseCOCOInstances2017Ordinal):
         current_image_size: Optional[mnn.vision.image_size.ImageSize] = None,
     ) -> torch.Tensor:
         output_tensor_bboxes = torch.zeros(
-            (self.expected_image_size.height, self.expected_image_size.width)
+            (self.output_shape.height, self.output_shape.width)
         )
 
         for i, annotation in enumerate(annotations):
@@ -786,6 +825,8 @@ class COCOInstances2017Ordinal4(BaseCOCOInstances2017Ordinal):
             vector, position_x, position_y = self._transform_annotation_into_vector(
                 annotation, fixed_ratio_components, padding_percent
             )
+            if position_x == -1 or position_y == -1:
+                continue
             position_in_tensor = (
                 position_y * self.grid_S + position_x
             )  # in 'height' dimension
@@ -809,14 +850,14 @@ class COCOInstances2017Ordinal4(BaseCOCOInstances2017Ordinal):
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         objects = y
         _coord_step = self.bbox_vector_size // 4
-        h, w = self.expected_image_size.height, self.expected_image_size.width
+        h, w = self.output_shape.height, self.output_shape.width
         bboxes = []
         categories = []
         confidence_scores = []
         for i, o in enumerate(objects):
             total_classes = len(self.classes)
             vector_size = len(o)
-            idx_bbox = vector_size - (total_classes + 1)
+            idx_bbox = vector_size - total_classes
             bbox_raw = o[:idx_bbox]
             xc_norm_in_grid_cell = self._decode_coordinate_vector_norm(
                 bbox_raw[:_coord_step]
@@ -831,9 +872,10 @@ class COCOInstances2017Ordinal4(BaseCOCOInstances2017Ordinal):
                 bbox_raw[3 * _coord_step : 4 * _coord_step], h
             )
 
-            Sx, Sy = self._calculate_position_in_grid_from_tensor(i)
-            step_x_in_pixels = w // self.grid_S
-            step_y_in_pixels = h // self.grid_S
+            grid_S = int(self.expected_image_size.height ** (1 / 2))
+            Sx, Sy = self._calculate_position_in_grid_from_tensor(i, grid_S)
+            step_x_in_pixels = w // grid_S
+            step_y_in_pixels = h // grid_S
             xc = int((Sx + xc_norm_in_grid_cell) * step_x_in_pixels)
             yc = int((Sy + yc_norm_in_grid_cell) * step_y_in_pixels)
 
@@ -841,9 +883,8 @@ class COCOInstances2017Ordinal4(BaseCOCOInstances2017Ordinal):
                 continue
 
             bbox = [xc, yc, w0, h0]
-            idx_category = idx_bbox + total_classes
-            category = torch.argmax(o[idx_bbox:idx_category])
-            category_score = o[idx_category]
+            category = torch.argmax(o[-total_classes:])
+            category_score = o[category]
             bboxes.append(bbox)
             categories.append(category)
             confidence_scores.append(category_score.item())
@@ -910,18 +951,14 @@ class COCOInstances2017Ordinal4(BaseCOCOInstances2017Ordinal):
 
         xc_norm_in_grid_cell = self._decode_coordinate_vector_norm_batch(xc_ordinals)
         yc_norm_in_grid_cell = self._decode_coordinate_vector_norm_batch(yc_ordinals)
-        w0 = self._decode_coordinate_vector_batch(
-            w_ordinals, self.expected_image_size.width
-        )
-        h0 = self._decode_coordinate_vector_batch(
-            h_ordinals, self.expected_image_size.height
-        )
+        w0 = self._decode_coordinate_vector_batch(w_ordinals, self.output_shape.width)
+        h0 = self._decode_coordinate_vector_batch(h_ordinals, self.output_shape.height)
 
         Sx, Sy = self._calculate_positions_in_grid(
             torch.arange(y.shape[1], device=y.device)
         )
-        step_x_in_pixels = self.expected_image_size.width // self.grid_S
-        step_y_in_pixels = self.expected_image_size.height // self.grid_S
+        step_x_in_pixels = self.output_shape.width // self.grid_S
+        step_y_in_pixels = self.output_shape.height // self.grid_S
         xc = (Sx + xc_norm_in_grid_cell) * step_x_in_pixels
         yc = (Sy + yc_norm_in_grid_cell) * step_y_in_pixels
 
@@ -931,10 +968,10 @@ class COCOInstances2017Ordinal4(BaseCOCOInstances2017Ordinal):
         y1[y1 < 0] = 0
         x1[x1 > 1] = 1
         y1[y1 > 1] = 1
-        bboxes_as_mask[:, :, 0] = x1 / self.expected_image_size.width
-        bboxes_as_mask[:, :, 1] = y1 / self.expected_image_size.height
-        bboxes_as_mask[:, :, 2] = w0 / self.expected_image_size.width
-        bboxes_as_mask[:, :, 3] = h0 / self.expected_image_size.height
+        bboxes_as_mask[:, :, 0] = x1 / self.output_shape.width
+        bboxes_as_mask[:, :, 1] = y1 / self.output_shape.height
+        bboxes_as_mask[:, :, 2] = w0 / self.output_shape.width
+        bboxes_as_mask[:, :, 3] = h0 / self.output_shape.height
         bboxes_as_mask[bboxes_as_mask[:, :, 2] == 0] = 0
         bboxes_as_mask[bboxes_as_mask[:, :, 3] == 0] = 0
 
