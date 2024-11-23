@@ -79,15 +79,15 @@ def train_val(
         device, dtype=hyperparameters_config.floating_point_precision
     )
     presession_prediction = object_detection_model(validation_image).squeeze(0)
-    train_dataset.write_image_with_model_output(
-        presession_prediction, validation_image.squeeze(0), "pre-session_prediction"
-    )
+    # train_dataset.write_image_with_model_output(
+    #     presession_prediction, validation_image.squeeze(0), "pre-session_prediction"
+    # )
 
     # Prepare data loaders
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
         batch_size=hyperparameters_config.batch_size,
-        shuffle=True,
+        shuffle=False,
         pin_memory=True,
     )
     val_loader = torch.utils.data.DataLoader(

@@ -10,7 +10,7 @@ from mnn.losses import FocalLoss
 from mnn.lr_scheduler import MyLRScheduler
 from mnn.training_tools.parameters import get_params_grouped
 from mnn.vision.config import load_hyperparameters_config
-import mnn.vision.dataset.coco.experiments.detection_ordinal as mnn_ordinal
+import mnn.vision.dataset.coco.experiments.detection_ordinal2 as mnn_ordinal
 from mnn.vision.dataset.coco.training.metrics import bbox_iou
 from mnn.vision.dataset.coco.training.train import train_val
 import mnn.vision.image_size
@@ -24,20 +24,14 @@ def load_datasets(
     expected_image_size: mnn.vision.image_size.ImageSize,
     output_shape: mnn.vision.image_size.ImageSize,
 ) -> Tuple[
-    mnn_ordinal.COCOInstances2017Ordinal4,
-    mnn_ordinal.COCOInstances2017Ordinal4,
+    mnn_ordinal.COCOInstances2017Ordinal,
+    mnn_ordinal.COCOInstances2017Ordinal,
 ]:
-    train_dataset = mnn_ordinal.COCOInstances2017Ordinal4(
-        dataset_dir,
-        "train",
-        expected_image_size,
-        output_shape
+    train_dataset = mnn_ordinal.COCOInstances2017Ordinal(
+        dataset_dir, "train", expected_image_size, output_shape
     )
-    val_dataset = mnn_ordinal.COCOInstances2017Ordinal4(
-        dataset_dir,
-        "val",
-        expected_image_size,
-        output_shape
+    val_dataset = mnn_ordinal.COCOInstances2017Ordinal(
+        dataset_dir, "val", expected_image_size, output_shape
     )
     return train_dataset, val_dataset
 
@@ -67,7 +61,7 @@ class BboxLoss(torch.nn.Module):
 class ExperimentalLoss(torch.nn.Module):
     counter = 0
 
-    def __init__(self, dataset: mnn_ordinal.COCOInstances2017Ordinal4):
+    def __init__(self, dataset: mnn_ordinal.COCOInstances2017Ordinal):
         self.dataset = dataset
         super().__init__()
         self.xc_loss = FocalLoss(gamma=2.5)
@@ -183,7 +177,9 @@ if __name__ == "__main__":
     dataset_dir = pathlib.Path(args.dataset_dir)
     expected_image_size = model.expected_image_size
     classes = None  # ALL CLASSES
-    train_dataset, val_dataset = load_datasets(dataset_dir, expected_image_size, model.output_shape)
+    train_dataset, val_dataset = load_datasets(
+        dataset_dir, expected_image_size, model.output_shape
+    )
 
     # HYPERPARAMETERS
     LOGGER.info("hyperparameters...")

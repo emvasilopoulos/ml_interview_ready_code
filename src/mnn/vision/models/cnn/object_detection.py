@@ -9,6 +9,7 @@ import mnn.torch_utils
 
 module_timer = mnn.torch_utils.ModuleTimer()
 
+
 class Vanilla576(torch.nn.Module):
 
     def __init__(self):
@@ -30,12 +31,12 @@ class Vanilla576(torch.nn.Module):
         )
         self.down1 = mnn_conv_blocks_down.ConvBn(
             self.same3.out_channels, out_channels=128, kernel=3, stride=2, padding=1
-        ) # cuts resolution in half --> 288x288
+        )  # cuts resolution in half --> 288x288
 
         # 2 - scale down
         self.down2 = mnn_conv_blocks_down.ConvBn(
             self.down1.out_channels, 256, kernel=3, stride=2, padding=1
-        ) # cuts in half --> 144x144
+        )  # cuts in half --> 144x144
 
         # bottleneck
         self.down_bootleneck2 = mnn_conv_blocks_down.Bottleneck(self.down2.out_channels)
@@ -47,18 +48,26 @@ class Vanilla576(torch.nn.Module):
         self.down_bootleneck3 = mnn_conv_blocks_down.Bottleneck(self.down3.out_channels)
 
         """ SPP """
-        self.spp = mnn_conv_blocks_down.SPP(self.down_bootleneck3.out_channels, out_channels=1024)
+        self.spp = mnn_conv_blocks_down.SPP(
+            self.down_bootleneck3.out_channels, out_channels=1024
+        )
 
         self.pre_head0 = mnn_conv_blocks_down.ConvBn(
             self.spp.out_channels, out_channels=1024, kernel=3, stride=4, padding=1
         )
-        self.pre_head1 = mnn_conv_blocks_down.Bottleneck(
-            self.pre_head0.out_channels
+        self.pre_head1 = mnn_conv_blocks_down.Bottleneck(self.pre_head0.out_channels)
+        self.head0 = mnn_conv_blocks_down.ConvBn(
+            self.pre_head1.out_channels,
+            out_channels=324,
+            kernel=3,
+            stride=1,
+            padding=1,
+            # activation=torch.nn.Sigmoid(),
         )
-        self.head = mnn_conv_blocks_down.ConvBn(
-            self.pre_head1.out_channels, out_channels=324, kernel=3, stride=1, padding=1, activation=torch.nn.Sigmoid()
+        self.head1 = torch.nn.Linear(
+            self.head0.out_channels, self.head0.out_channels, bias=True
         )
-
+        self.head_activation = torch.nn.Sigmoid()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.same1(x)
@@ -72,8 +81,10 @@ class Vanilla576(torch.nn.Module):
         x = self.spp(x)
         x = self.pre_head0(x)
         x = self.pre_head1(x)
-        x = self.head(x)
-        return x.view(x.shape[0], x.shape[1], -1)
+        x = self.head0(x)
+        x = self.head1(x.view(x.shape[0], x.shape[1], -1))
+        x = self.head_activation(x)
+        return x
 
 
 if __name__ == "__main__":

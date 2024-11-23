@@ -38,6 +38,8 @@ def train_one_epoch(
     val_counter = 0
     tqdm_obj = tqdm.tqdm(train_loader, desc="Training | Loss: 0")
     for i, (image_batch, target0) in enumerate(tqdm_obj):
+        if i == 0:
+            continue
         image_batch = image_batch.to(
             device=device,
             dtype=hyperparameters_config.floating_point_precision,
@@ -91,22 +93,23 @@ def train_one_epoch(
 
             # Store validation image to inspect the model's performance
             temp_out = model(validation_image)
-            train_loader.dataset.write_image_with_model_output(
-                temp_out.squeeze(0),
-                validation_image.squeeze(0),
-                f"validation_image_prediction",
-            )
+            # train_loader.dataset.write_image_with_model_output(
+            #     temp_out.squeeze(0),
+            #     validation_image.squeeze(0),
+            #     f"validation_image_prediction",
+            # )
             train_loader.dataset.write_image_with_model_output(
                 target0[0],
                 image_batch[0],
                 "train_image_ground_truth",
             )
-            train_loader.dataset.write_image_with_model_output(
-                output[0],
-                image_batch[0],
-                "train_image_pred",
-            )
+            # train_loader.dataset.write_image_with_model_output(
+            #     output[0],
+            #     image_batch[0],
+            #     "train_image_pred",
+            # )
             val_counter += 1
+            exit()
     return last_loss
 
 
