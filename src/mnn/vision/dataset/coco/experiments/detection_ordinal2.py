@@ -142,6 +142,9 @@ class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
     def _decode_coordinate_vector(
         self, vector: torch.Tensor, image_dimension_size: int
     ) -> int:
+        """
+        Expecting tensors: (vector_size,)
+        """
         if len(vector.shape) != 1:
             raise ValueError("The vector should be 1-dimensional")
         vector_size = vector.shape[0]
@@ -150,6 +153,9 @@ class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
         return int(normalized_coordinate * image_dimension_size)
 
     def _decode_coordinate_vector_norm(self, vector: torch.Tensor) -> int:
+        """
+        Expecting tensors: (vector_size,)
+        """
         if len(vector.shape) != 1:
             raise ValueError("The vector should be 1-dimensional")
         vector_size = vector.shape[0]
@@ -159,6 +165,9 @@ class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
     def _decode_coordinate_vector_batch(
         self, vector: torch.Tensor, image_dimension_size: int
     ) -> torch.Tensor:
+        """
+        Expecting tensors: (batch_size, n_vectors, vector_size)
+        """
         vector_size = vector.shape[2]
         indices = torch.argmax(vector, dim=2)
         normalized_coordinate = indices / (vector_size - 1)
@@ -184,7 +193,7 @@ class COCOInstances2017Ordinal(BaseCOCOInstances2017Ordinal):
         )
         if self.output_shape.height ** (1 / 2) % 1 != 0:
             raise ValueError(
-                f"The square root of the height of the expected image size for '{__class__}' should be an integer."
+                f"The square root of the height of the output shape for '{__class__}' should be an integer. Current value: {self.output_shape.height}"
             )
 
         image_grid_Sx = int(self.expected_image_size.width ** (1 / 2))
@@ -308,65 +317,47 @@ class COCOInstances2017Ordinal(BaseCOCOInstances2017Ordinal):
             class_scores,
         )
 
-    def write_image_with_model_output(
-        self, model_output: torch.Tensor, image: torch.Tensor, sub_dir: str
-    ):
-        bboxes, categories, categories_scores = self.decode_output_tensor(model_output)
+    def _decode_bbox_raw_vector(self, vector: torch.Tensor, vector_position: int):
+        _coord_step = self.bbox_vector_size // 4
 
-        # conf_threshold = 0.5
-        # while categories_scores[categories_scores > 0.5].shape[0] == 0:
-        #     conf_threshold -= 0.005
-        #     if conf_threshold <= 0:
-        #         conf_threshold = 0
-        #         break
+        bbox_raw = vector[: self.bbox_vector_size]
+        xc_norm_in_grid_cell = self._decode_coordinate_vector_norm(
+            bbox_raw[:_coord_step]
+        )
+        yc_norm_in_grid_cell = self._decode_coordinate_vector_norm(
+            bbox_raw[_coord_step : 2 * _coord_step]
+        )
+        w0 = self._decode_coordinate_vector(
+            bbox_raw[2 * _coord_step : 3 * _coord_step],
+            self.expected_image_size.width,
+        )
+        h0 = self._decode_coordinate_vector(
+            bbox_raw[3 * _coord_step : 4 * _coord_step],
+            self.expected_image_size.height,
+        )
 
-        # bboxes = bboxes[categories_scores > conf_threshold]
-        # categories = categories[categories_scores > conf_threshold]
-        validation_img = image.detach().cpu()
-        validation_img = validation_img.permute(1, 2, 0)
-        image = (validation_img.numpy() * 255).astype("uint8")
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        """
+        Calculate real coordinates based on shape of output tensor
+        to get the normalized coordinates
+        """
+        Sx, Sy = mnn_grid.oneD_position_to_twoD_grid_position(
+            vector_position, self.output_mask_grid_S
+        )
+        xc_norm, yc_norm = mnn_grid.calculate_real_coordinate(
+            xc_norm_in_grid_cell,
+            yc_norm_in_grid_cell,
+            Sx,
+            Sy,
+            self.output_mask_grid_S,
+            self.output_shape,
+        )
 
-        for bbox, category, confidence in zip(bboxes, categories, categories_scores):
-            xc, yc, w, h = bbox
-            x1 = int(xc - w / 2)
-            y1 = int(yc - h / 2)
-            x2 = int(x1 + w)
-            y2 = int(y1 + h)
-            if any(x < 0 for x in [x1, y1, x2, y2]):
-                continue
-            print(
-                "OUT |",
-                "Bbox: ",
-                x1,
-                y1,
-                w,
-                h,
-                "Category: ",
-                category,
-            )
-            cv2.rectangle(image, (x1, x2), (x2, y2), (0, 255, 0), 2)
+        # de-normalize based on shape of the expected image
+        xc = xc_norm * self.expected_image_size.width
+        yc = yc_norm * self.expected_image_size.height
 
-            category_no = category.item()
-            cat = (
-                f"{category_no} - {confidence:.3f}"
-                if category_no < 1.0
-                else f"{category_no}"
-            )
-            cv2.putText(
-                image,
-                cat,
-                (x1, y1),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (255, 0, 0),
-                2,
-                cv2.LINE_AA,
-            )
-
-        # reverse mask
-        os.makedirs(f"assessment_images/{sub_dir}", exist_ok=True)
-        cv2.imwrite(f"assessment_images/{sub_dir}/bboxed_image.jpg", image)
+        bbox = [xc, yc, w0, h0]
+        return bbox
 
     def decode_output_tensor(
         self, y: torch.Tensor, filter_by_objectness_score: bool = False
@@ -384,41 +375,8 @@ class COCOInstances2017Ordinal(BaseCOCOInstances2017Ordinal):
                 continue
             objects_positions.append(i)
 
-            ## BBox
-            bbox_raw = o[: self.bbox_vector_size]
-            xc_norm_in_grid_cell = self._decode_coordinate_vector_norm(
-                bbox_raw[:_coord_step]
-            )
-            yc_norm_in_grid_cell = self._decode_coordinate_vector_norm(
-                bbox_raw[_coord_step : 2 * _coord_step]
-            )
-            w0 = self._decode_coordinate_vector(
-                bbox_raw[2 * _coord_step : 3 * _coord_step],
-                self.expected_image_size.width,
-            )
-            h0 = self._decode_coordinate_vector(
-                bbox_raw[3 * _coord_step : 4 * _coord_step],
-                self.expected_image_size.height,
-            )
-
-            Sx, Sy = mnn_grid.oneD_position_to_twoD_grid_position(
-                i, self.output_mask_grid_S
-            )
-            xc_norm, yc_norm = mnn_grid.calculate_real_coordinate(
-                xc_norm_in_grid_cell,
-                yc_norm_in_grid_cell,
-                Sx,
-                Sy,
-                self.image_grid_S,
-                self.expected_image_size,
-            )
-            xc = xc_norm * self.expected_image_size.width
-            yc = yc_norm * self.expected_image_size.height
-
-            if all(x == 0 for x in [xc, yc, w0, h0]):
-                continue
-
-            bbox = [xc, yc, w0, h0]
+            # Bbox
+            bbox = self._decode_bbox_raw_vector(o, i)
 
             # Category
             category_vector = o[self.bbox_vector_size :]
@@ -432,3 +390,153 @@ class COCOInstances2017Ordinal(BaseCOCOInstances2017Ordinal):
             torch.Tensor(categories),
             torch.Tensor(confidence_scores),
         )
+
+    def decode_output_tensor_filtered(
+        self, y: torch.Tensor, score_threshold: float = 0.5
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        objects = y
+        bboxes = []
+        categories = []
+        confidence_scores = []
+
+        for i in range(y.shape[0]):
+            o = objects[i]
+            if o.sum() == 0:
+                continue
+
+            # Category
+            category_vector = o[self.bbox_vector_size :]
+            category = torch.argmax(category_vector)
+            category_score = category_vector[category]
+            if category_score < score_threshold:
+                continue
+            categories.append(category.item())
+            confidence_scores.append(category_score.item())
+
+            # Bbox
+            bbox = self._decode_bbox_raw_vector(o, i)
+            bboxes.append(bbox)
+        return (
+            torch.Tensor(bboxes),
+            torch.Tensor(categories),
+            torch.Tensor(confidence_scores),
+        )
+
+    def decode_gt_pred_pair(
+        self, y_gt: torch.Tensor, y_pred: torch.Tensor, to_tlwh: bool = True
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Ignores extra predictions and returns bboxes in the same positions as the ground truth
+        """
+        bboxes_gt = []
+        categories_gt = []
+        confidence_scores_gt = []
+
+        bboxes_pred = []
+        categories_pred = []
+        confidence_scores_pred = []
+
+        for i in range(y_gt.shape[0]):
+            if y_gt[i].sum() == 0:
+                continue
+
+            ###### GT
+            # Bbox
+            bbox_gt = self._decode_bbox_raw_vector(y_gt[i], i)
+            # Category
+            category_vector = y_gt[i, self.bbox_vector_size :]
+            category = torch.argmax(category_vector)
+            category_score = category_vector[category]
+            if to_tlwh:
+                bbox_gt = mnn_bbox_mapper.center_xywh_to_tl_xywh_tensor(bbox_gt)
+            bboxes_gt.append(bbox_gt)
+            categories_gt.append(category.item())
+            confidence_scores_gt.append(category_score.item())
+
+            ###### GT
+            bbox_pred = self._decode_bbox_raw_vector(y_pred[i], i)
+            # Category
+            category_vector = y_pred[i, self.bbox_vector_size :]
+            category = torch.argmax(category_vector)
+            category_score = category_vector[category]
+            if to_tlwh:
+                bbox_pred = mnn_bbox_mapper.center_xywh_to_tl_xywh_tensor(bbox_pred)
+            bboxes_pred.append(bbox_pred)
+            categories_pred.append(category.item())
+            confidence_scores_pred.append(category_score.item())
+
+        return (
+            torch.Tensor(bboxes_gt),
+            torch.Tensor(categories_gt),
+            torch.Tensor(confidence_scores_gt),
+            torch.Tensor(bboxes_pred),
+            torch.Tensor(categories_pred),
+            torch.Tensor(confidence_scores_pred),
+        )
+
+    def write_image_with_model_output(
+        self, model_output: torch.Tensor, image: torch.Tensor, sub_dir: str
+    ):
+        bboxes, categories, categories_scores = self.decode_output_tensor(model_output)
+
+        threshold = 0.5
+        while categories_scores[categories_scores > threshold].shape[0] == 0:
+            threshold -= 0.01
+            if threshold < 0:
+                threshold = 1  # no objects found
+                break
+        bboxes = bboxes[categories_scores > threshold]
+        categories = categories[categories_scores > threshold]
+        categories_scores = categories_scores[categories_scores > threshold]
+
+        validation_img = image.detach().cpu()
+        validation_img = validation_img.permute(1, 2, 0)
+        image = (validation_img.numpy() * 255).astype("uint8")
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+
+        for bbox, category, confidence in zip(bboxes, categories, categories_scores):
+            bbox = mnn_bbox_mapper.center_xywh_to_tl_xywh_tensor(bbox)
+
+            x1 = int(bbox[0].item())
+            y1 = int(bbox[1].item())
+            w = int(bbox[2].item())
+            h = int(bbox[3].item())
+            x2 = x1 + w
+            y2 = y1 + h
+            point1 = (x1, y1)
+            point2 = (x2, y2)
+            cv2.rectangle(image, point1, point2, (0, 255, 0), 2)
+
+            category_no = int(category.item())
+            if confidence >= 1.0:
+                cat = f"{category_no}"
+            else:
+                cat = f"{category_no} - {confidence:.3f}"
+            cv2.putText(
+                image,
+                cat,
+                (x1, y1),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (255, 0, 0),
+                2,
+                cv2.LINE_AA,
+            )
+        if threshold == 1:
+            msg = "No objects found"
+        else:
+            msg = f"Threshold: {threshold:.2f}"
+        cv2.putText(
+            image,
+            msg,
+            (40, image.shape[0] - 40),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            1,
+            (240, 20, 0),
+            1,
+            cv2.LINE_AA,
+        )
+
+        # reverse mask
+        os.makedirs(f"assessment_images/{sub_dir}", exist_ok=True)
+        cv2.imwrite(f"assessment_images/{sub_dir}/bboxed_image.jpg", image)

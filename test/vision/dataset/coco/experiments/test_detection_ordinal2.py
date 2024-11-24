@@ -8,14 +8,14 @@ import torch
 import mnn.vision.dataset.coco.experiments.detection_ordinal2 as mnn_detection_ordinal
 import mnn.vision.process_input.dimensions.resize_fixed_ratio as mnn_resize_fixed_ratio
 import mnn.vision.process_output.object_detection.bbox_mapper as mnn_bbox_mapper
+import mnn.vision.process_output.object_detection.grid as mnn_grid
 import mnn.vision.image_size
 import mnn.logging
 
 LOGGER = mnn.logging.get_logger(__name__, loglevel=logging.INFO)
 
 
-class TestCOCOInstances2017Ordinal(unittest.TestCase):
-
+class TestBaseCOCOInstances2017Ordinal(unittest.TestCase):
     def setUp(self) -> None:
 
         dataset_dir = pathlib.Path("/home/manos/ml_interview_ready_code/data/")
@@ -43,6 +43,54 @@ class TestCOCOInstances2017Ordinal(unittest.TestCase):
             expected_image_size=self.expected_image_sizeSq,
         )
         self.imageSq, self.targetSq = self.datasetSq[0]
+
+        self.output_shapeSq = mnn.vision.image_size.ImageSize(324, 324)
+        self.datasetSq2 = mnn_detection_ordinal.COCOInstances2017Ordinal(
+            data_dir=dataset_dir,
+            split="val",
+            expected_image_size=self.expected_image_sizeSq,
+            output_shape=self.output_shapeSq,
+        )
+        self.imageSq2, self.targetSq2 = self.datasetSq[0]
+
+    def _test_decode_coordinate_vector_norm(
+        self, dataset: mnn_detection_ordinal.COCOInstances2017Ordinal
+    ):
+        z = torch.zeros(dataset.expected_image_size.width)
+        z[0] = 1
+        z[1] = 0.75
+        z[2] = 0.5
+        z[3] = 0.25
+        self.assertAlmostEqual(dataset._decode_coordinate_vector_norm(z), 0)
+
+        z = torch.zeros(dataset.expected_image_size.width)
+        z[0] = 0.25
+        z[1] = 0.5
+        z[2] = 0.75
+        z[3] = 1
+        z[4] = 0.75
+        z[5] = 0.5
+        z[6] = 0.25
+        self.assertAlmostEqual(
+            dataset._decode_coordinate_vector_norm(z),
+            3 / (z.shape[0] - 1),
+        )
+
+        z = torch.zeros(dataset.expected_image_size.width)
+        z[dataset.expected_image_size.width - 2] = 0.75
+        z[dataset.expected_image_size.width - 3] = 0.5
+        z[dataset.expected_image_size.width - 4] = 0.25
+        z[dataset.expected_image_size.width - 1] = 1
+        self.assertAlmostEqual(
+            dataset._decode_coordinate_vector_norm(z),
+            (dataset.expected_image_size.width - 1) / (z.shape[0] - 1),
+        )
+
+    def test_decode_coordinate_vector_norm(self):
+        LOGGER.info("test_decode_coordinate_vector_norm")
+        self._test_decode_coordinate_vector_norm(self.datasetW)
+        self._test_decode_coordinate_vector_norm(self.datasetH)
+        self._test_decode_coordinate_vector_norm(self.datasetSq)
 
     def _test_expand_left_right(
         self, dataset: mnn_detection_ordinal.COCOInstances2017Ordinal
@@ -173,6 +221,9 @@ class TestCOCOInstances2017Ordinal(unittest.TestCase):
         self._test_create_object_vector(self.datasetW)
         self._test_create_object_vector(self.datasetSq)
 
+
+class TestCOCOInstances2017Ordinal(TestBaseCOCOInstances2017Ordinal):
+
     def _test_decode_output_tensor(
         self, dataset: mnn_detection_ordinal.COCOInstances2017Ordinal
     ):
@@ -265,14 +316,16 @@ class TestCOCOInstances2017Ordinal(unittest.TestCase):
         self.assertEqual(len(scores), 2)
 
         bbox = bboxes[1]
-        dataset.image_grid_S.width
+        Sx, Sy = mnn_grid.oneD_position_to_twoD_grid_position(2, dataset.image_grid_S)
+        self.assertEqual(Sx, 2)
+        self.assertEqual(Sy, 0)
         self.assertAlmostEqual(
             bbox[0].item() / dataset.expected_image_size.width,
-            dataset.image_grid_S.width * 2 / dataset.expected_image_size.width,
+            dataset.image_grid_S.width * Sx / dataset.expected_image_size.width,
         )
         self.assertAlmostEqual(
             bbox[1].item() / dataset.expected_image_size.height,
-            0,
+            dataset.image_grid_S.height * Sy / dataset.expected_image_size.height,
         )
         self.assertAlmostEqual(
             bbox[2].item() / dataset.expected_image_size.width, 0.1, delta=0.008
@@ -283,6 +336,80 @@ class TestCOCOInstances2017Ordinal(unittest.TestCase):
         self.assertEqual(categories[1].item(), 5)
         self.assertEqual(scores[1].item(), 1)
 
+        """ TEST 3 """
+        # x1 = 0.25 in grid 40 <=> Sx=one-of-{24, 26, 26}, Sy=1
+        pos = int(coord_len * 0.25)
+        output_mask[40, pos - 3] = 0.25
+        output_mask[40, pos - 2] = 0.5
+        output_mask[40, pos - 1] = 0.75
+        output_mask[40, pos] = 1.0
+        output_mask[40, pos + 1] = 0.75
+        output_mask[40, pos + 2] = 0.5
+        output_mask[40, pos + 3] = 0.25
+        # y = 0.33 in grid 40 <=> Sx=one-of-{24, 26, 26}, Sy=one-of-{24, 26, 26}
+        pos = int(coord_len * 0.33)
+        output_mask[40, coord_len + pos - 3] = 0.25
+        output_mask[40, coord_len + pos - 2] = 0.5
+        output_mask[40, coord_len + pos - 1] = 0.75
+        output_mask[40, coord_len + pos] = 1.0
+        output_mask[40, coord_len + pos + 1] = 0.75
+        output_mask[40, coord_len + pos + 2] = 0.5
+        output_mask[40, coord_len + pos + 3] = 0.25
+        # w = 0.05 in grid 40 <=> Sx=one-of-{24, 26, 26}, Sy=one-of-{24, 26, 26}
+        pos = int(coord_len * 0.05)
+        output_mask[40, 2 * coord_len + pos - 3] = 0.25
+        output_mask[40, 2 * coord_len + pos - 2] = 0.5
+        output_mask[40, 2 * coord_len + pos - 1] = 0.75
+        output_mask[40, 2 * coord_len + pos] = 1.0
+        output_mask[40, 2 * coord_len + pos + 1] = 0.75
+        output_mask[40, 2 * coord_len + pos + 2] = 0.5
+        output_mask[40, 2 * coord_len + pos + 3] = 0.25
+        # h = 0.05 in grid 40 <=> Sx=one-of-{24, 26, 26}, Sy=one-of-{24, 26, 26}
+        pos = int(coord_len * 0.05)
+        output_mask[40, 3 * coord_len + pos - 3] = 0.25
+        output_mask[40, 3 * coord_len + pos - 2] = 0.5
+        output_mask[40, 3 * coord_len + pos - 1] = 0.75
+        output_mask[40, 3 * coord_len + pos] = 1.0
+        output_mask[40, 3 * coord_len + pos + 1] = 0.75
+        output_mask[40, 3 * coord_len + pos + 2] = 0.5
+        output_mask[40, 3 * coord_len + pos + 3] = 0.25
+        # category = 80
+        cat_idx = 80 - 1
+        output_mask[40, dataset.bbox_vector_size + cat_idx - 3] = 0.25
+        output_mask[40, dataset.bbox_vector_size + cat_idx - 2] = 0.5
+        output_mask[40, dataset.bbox_vector_size + cat_idx - 1] = 0.75
+        output_mask[40, dataset.bbox_vector_size + cat_idx] = 1.0
+        self.assertRaises(
+            IndexError, lambda: output_mask[40, dataset.bbox_vector_size + cat_idx + 1]
+        )
+
+        bboxes, categories, scores = dataset.decode_output_tensor(output_mask)
+        self.assertEqual(len(bboxes), 3)
+        self.assertEqual(len(categories), 3)
+        self.assertEqual(len(scores), 3)
+
+        bbox = bboxes[2]
+        Sx, Sy = mnn_grid.oneD_position_to_twoD_grid_position(40, dataset.image_grid_S)
+        x_test_norm = bbox[0].item() / dataset.expected_image_size.width
+        x_true_norm = (
+            dataset.image_grid_S.width * Sx + 0.25
+        ) / dataset.expected_image_size.width
+        self.assertAlmostEqual(x_test_norm, x_true_norm, delta=0.02)
+        self.assertAlmostEqual(
+            bbox[1].item() / dataset.expected_image_size.height,
+            (dataset.image_grid_S.height * Sy + 0.33)
+            / dataset.expected_image_size.height,
+            delta=0.02,
+        )
+        self.assertAlmostEqual(
+            bbox[2].item() / dataset.expected_image_size.width, 0.05, delta=0.008
+        )
+        self.assertAlmostEqual(
+            bbox[3].item() / dataset.expected_image_size.height, 0.05, delta=0.008
+        )
+        self.assertEqual(categories[2].item(), 79)
+        self.assertEqual(scores[2].item(), 1)
+
     def test_decode_output_tensor(self):
         LOGGER.info("test_decode_output_tensor")
         self._test_decode_output_tensor(self.datasetH)
@@ -290,14 +417,19 @@ class TestCOCOInstances2017Ordinal(unittest.TestCase):
         self._test_decode_output_tensor(self.datasetSq)
 
     def _test_get_output_tensor(
-        self, dataset: mnn_detection_ordinal.COCOInstances2017Ordinal
+        self,
+        dataset: mnn_detection_ordinal.COCOInstances2017Ordinal,
+        padding_percent: float,
     ):
-        current_image_size = mnn.vision.image_size.ImageSize(width=100, height=100)
-        expected_image_size = mnn.vision.image_size.ImageSize(width=100, height=120)
+        current_image_size = mnn.vision.image_size.ImageSize(width=400, height=400)
+        expected_image_size = mnn.vision.image_size.ImageSize(
+            width=dataset.expected_image_size.width,
+            height=dataset.expected_image_size.height,
+        )
         fixed_ratio_components = mnn_resize_fixed_ratio.calculate_new_tensor_dimensions(
             current_image_size, expected_image_size
         )
-        padding_percent = random.random()
+
         bboxes = [(0, 0, 0.1, 0.1), (0.5, 0.5, 0.1, 0.1)]
         categories = [4, 5]
         scores = [1, 1]
@@ -329,21 +461,25 @@ class TestCOCOInstances2017Ordinal(unittest.TestCase):
         )
         bboxes_mapped = [bbox_mapped0, bbox_mapped1]
         for bbox, bbox_out in zip(bboxes_mapped, bboxes_out):
-            x = bbox[0] * expected_image_size.width
-            y = bbox[1] * expected_image_size.height
-            w = bbox[2] * expected_image_size.width
-            h = bbox[3] * expected_image_size.height
-            print(x, y, w, h)
-            print(bbox_out)
-            torch.testing.assert_close(torch.Tensor([x, y, w, h]), bbox_out)
-        torch.testing.assert_close(torch.Tensor(categories), categories_out)
+            bbox_out = mnn_bbox_mapper.center_xywh_to_tl_xywh_tensor(bbox_out)
+            bbox_out[0] /= expected_image_size.width
+            bbox_out[1] /= expected_image_size.height
+            bbox_out[2] /= expected_image_size.width
+            bbox_out[3] /= expected_image_size.height
+            bbox = torch.Tensor(bbox)
+            for coord, coord_out in zip(bbox, bbox_out):
+                self.assertAlmostEqual(coord.item(), coord_out.item(), delta=0.02)
+        torch.testing.assert_close(torch.Tensor(categories) - 1, categories_out)
         torch.testing.assert_close(torch.Tensor(scores), scores_out)
 
     def test_get_output_tensor(self):
+        random.seed(0)
+        padding_percent = random.random()  # 0.8444218515250481
         LOGGER.info("test_get_output_tensor")
-        self._test_get_output_tensor(self.datasetH)
-        self._test_get_output_tensor(self.datasetW)
-        self._test_get_output_tensor(self.datasetSq)
+        self._test_get_output_tensor(self.datasetH, padding_percent)
+        self._test_get_output_tensor(self.datasetW, padding_percent)
+        self._test_get_output_tensor(self.datasetSq, padding_percent)
+        self._test_get_output_tensor(self.datasetSq2, padding_percent)
 
 
 if __name__ == "__main__":

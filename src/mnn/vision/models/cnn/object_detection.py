@@ -4,7 +4,6 @@ import torch
 import mnn.vision
 import mnn.vision.image_size
 import mnn.vision.models.cnn.components.conv_blocks_down as mnn_conv_blocks_down
-import mnn.vision.models.cnn.components.conv_blocks_up as mnn_conv_blocks_up
 import mnn.torch_utils
 
 module_timer = mnn.torch_utils.ModuleTimer()
@@ -15,7 +14,7 @@ class Vanilla576(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.expected_image_size = mnn.vision.image_size.ImageSize(576, 576)
-        self.output_shape = mnn.vision.image_size.ImageSize(324, 324)
+        layer_output_shape = mnn.vision.image_size.ImageSize(576, 576)
         self.image_channels = self.expected_image_size.channels
 
         """ Down Sampling """
@@ -29,22 +28,39 @@ class Vanilla576(torch.nn.Module):
         self.same3 = mnn_conv_blocks_down.ConvBn(
             self.same2.out_channels, out_channels=64, kernel=3, stride=1, padding=1
         )
+        scale_down_factor = 2
         self.down1 = mnn_conv_blocks_down.ConvBn(
-            self.same3.out_channels, out_channels=128, kernel=3, stride=2, padding=1
+            self.same3.out_channels,
+            out_channels=128,
+            kernel=3,
+            stride=scale_down_factor,
+            padding=1,
         )  # cuts resolution in half --> 288x288
+        layer_output_shape.width //= scale_down_factor
+        layer_output_shape.height //= scale_down_factor
 
         # 2 - scale down
+        scale_down_factor = 2
         self.down2 = mnn_conv_blocks_down.ConvBn(
-            self.down1.out_channels, 256, kernel=3, stride=2, padding=1
+            self.down1.out_channels, 256, kernel=3, stride=scale_down_factor, padding=1
         )  # cuts in half --> 144x144
+        layer_output_shape.width //= scale_down_factor
+        layer_output_shape.height //= scale_down_factor
 
         # bottleneck
         self.down_bootleneck2 = mnn_conv_blocks_down.Bottleneck(self.down2.out_channels)
 
         # 3 - scale down
+        scale_down_factor = 2
         self.down3 = mnn_conv_blocks_down.ConvBn(
-            self.down_bootleneck2.out_channels, 512, kernel=3, stride=2, padding=1
-        )
+            self.down_bootleneck2.out_channels,
+            512,
+            kernel=3,
+            stride=scale_down_factor,
+            padding=1,
+        )  # cuts in half --> 72x72
+        layer_output_shape.width //= scale_down_factor
+        layer_output_shape.height //= scale_down_factor
         self.down_bootleneck3 = mnn_conv_blocks_down.Bottleneck(self.down3.out_channels)
 
         """ SPP """
@@ -52,13 +68,20 @@ class Vanilla576(torch.nn.Module):
             self.down_bootleneck3.out_channels, out_channels=1024
         )
 
+        scale_down_factor = 6
         self.pre_head0 = mnn_conv_blocks_down.ConvBn(
-            self.spp.out_channels, out_channels=1024, kernel=3, stride=4, padding=1
-        )
+            self.spp.out_channels,
+            out_channels=1024,
+            kernel=3,
+            stride=scale_down_factor,
+            padding=1,
+        )  # scale down to 12x12
+        layer_output_shape.width //= scale_down_factor
+        layer_output_shape.height //= scale_down_factor
         self.pre_head1 = mnn_conv_blocks_down.Bottleneck(self.pre_head0.out_channels)
         self.head0 = mnn_conv_blocks_down.ConvBn(
             self.pre_head1.out_channels,
-            out_channels=324,
+            out_channels=layer_output_shape.width * layer_output_shape.height,
             kernel=3,
             stride=1,
             padding=1,
@@ -68,6 +91,11 @@ class Vanilla576(torch.nn.Module):
             self.head0.out_channels, self.head0.out_channels, bias=True
         )
         self.head_activation = torch.nn.Sigmoid()
+
+        self.output_shape = mnn.vision.image_size.ImageSize(
+            layer_output_shape.width * layer_output_shape.height,
+            layer_output_shape.width * layer_output_shape.height,
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.same1(x)

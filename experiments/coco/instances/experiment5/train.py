@@ -1,6 +1,6 @@
 import argparse
 import pathlib
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.utils.tensorboard
@@ -11,10 +11,11 @@ from mnn.lr_scheduler import MyLRScheduler
 from mnn.training_tools.parameters import get_params_grouped
 from mnn.vision.config import load_hyperparameters_config
 import mnn.vision.dataset.coco.experiments.detection_ordinal2 as mnn_ordinal
-from mnn.vision.dataset.coco.training.metrics import bbox_iou
+from mnn.vision.dataset.coco.training.metrics import bbox_overlaps_ciou
 from mnn.vision.dataset.coco.training.train import train_val
 import mnn.vision.image_size
 import mnn.vision.models.cnn.object_detection as mnn_vit_model
+import mnn.vision.process_output.object_detection.bbox_mapper as mnn_bbox_mapper
 
 LOGGER = mnn.logging.get_logger(__name__)
 
@@ -47,15 +48,21 @@ def load_model(
 
 focal_loss = FocalLoss()
 
+import torchmetrics.detection
+
 
 class BboxLoss(torch.nn.Module):
     def __init__(self):
         super().__init__()
+        self.ciou_fn = torchmetrics.detection.CompleteIntersectionOverUnion()
 
-    def forward(self, predictions: torch.Tensor, targets: torch.Tensor):
-        iou = bbox_iou(predictions, targets).squeeze(-1)
-        loss = 1.0 - iou.mean(dim=1)
-        return loss.sum(dim=0)
+    def forward(
+        self,
+        predictions: List[Dict[str, torch.Tensor]],
+        targets: List[Dict[str, torch.Tensor]],
+    ):
+        result = self.ciou_fn(predictions, targets)
+        return 1 - result["ciou"]
 
 
 class ExperimentalLoss(torch.nn.Module):
@@ -64,18 +71,13 @@ class ExperimentalLoss(torch.nn.Module):
     def __init__(self, dataset: mnn_ordinal.COCOInstances2017Ordinal):
         self.dataset = dataset
         super().__init__()
-        self.xc_loss = FocalLoss(gamma=2.5)
-        self.yc_loss = FocalLoss(gamma=2.5)
+        self.xc_loss = FocalLoss(gamma=2.0)
+        self.yc_loss = FocalLoss(gamma=2.0)
         self.w_loss = FocalLoss(gamma=2.0)
         self.h_loss = FocalLoss(gamma=2.0)
-        self.class_loss = FocalLoss(gamma=3.0)
-        self.losses = {
-            "xc": 0,
-            "yc": 0,
-            "w": 0,
-            "h": 0,
-            "class": 0,
-        }
+        self.class_loss = FocalLoss(gamma=2.0)
+        self.bbox_loss = BboxLoss()
+        self.losses = {"xc": 0, "yc": 0, "w": 0, "h": 0, "class": 0, "bbox": 0}
         self.total_loss = 0
 
     def _total_loss(self):
@@ -88,6 +90,7 @@ class ExperimentalLoss(torch.nn.Module):
             "w": 0,
             "h": 0,
             "class": 0,
+            "bbox": 0,
         }
         for pred_sample, target_sample in zip(predictions, targets):
             (
@@ -106,29 +109,65 @@ class ExperimentalLoss(torch.nn.Module):
                 target_class_scores,
             ) = self.dataset.split_output_to_vectors(target_sample)
 
+            # xc
             self.xc_loss_value = self.xc_loss(
                 pred_xc_ordinals,
                 target_xc_ordinals,
             )
             self.losses["xc"] += self.xc_loss_value
 
+            # yc
             self.yc_loss_value = self.yc_loss(
                 pred_yc_ordinals,
                 target_yc_ordinals,
             )
             self.losses["yc"] += self.yc_loss_value
 
+            # w
             self.w_loss_value = self.w_loss(pred_w_ordinals, target_w_ordinals)
             self.losses["w"] += self.w_loss_value
 
+            # h
             self.h_loss_value = self.h_loss(pred_h_ordinals, target_h_ordinals)
             self.losses["h"] += self.h_loss_value
 
+            # class
             self.class_loss_value = self.class_loss(
                 pred_class_scores,
                 target_class_scores,
             )
             self.losses["class"] += self.class_loss_value
+
+            # bbox
+            # TODO --> faster
+            bboxes_gt, categories_gt, conf_gt = (
+                self.dataset.decode_output_tensor_filtered(
+                    target_sample, score_threshold=0.5
+                )
+            )
+            # TODO --> faster
+            (
+                bboxes_pred,
+                categories_pred,
+                conf_pred,
+            ) = self.dataset.decode_output_tensor_filtered(
+                target_sample, score_threshold=0.5
+            )
+            if bboxes_gt.shape[0] == 0:
+                self.bbox_loss_value = 0
+            else:
+                bboxes_gt = mnn_bbox_mapper.tl_xywh_to_tlbr_tensor(bboxes_gt)
+                bboxes_pred = mnn_bbox_mapper.tl_xywh_to_tlbr_tensor(bboxes_pred)
+                gts = [{"boxes": bboxes_gt, "labels": categories_gt}]
+                preds = [
+                    {
+                        "boxes": bboxes_pred,
+                        "labels": categories_pred,
+                        "scores": conf_pred,
+                    }
+                ]
+                self.bbox_loss_value = self.bbox_loss(preds, gts)
+            self.losses["bbox"] += self.bbox_loss_value
 
         self.total_loss = self._total_loss()
         return self.total_loss
@@ -199,7 +238,6 @@ if __name__ == "__main__":
     scheduler = MyLRScheduler(optimizer)
 
     # Tensorboard
-    LOGGER.info("tensorboard summary writer. Open with: \ntensorboard --logdir=runs")
     writer = torch.utils.tensorboard.SummaryWriter(
         log_dir=f"runs/coco_my_vit_predictions"
     )

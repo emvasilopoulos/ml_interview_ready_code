@@ -49,6 +49,7 @@ def bbox_iou(
 
     # IoU
     iou = inter / union
+
     if CIoU or DIoU or GIoU:
         cw = b1_x2.maximum(b2_x2) - b1_x1.minimum(
             b2_x1
@@ -69,10 +70,67 @@ def bbox_iou(
                 return iou - (rho2 / c2 + v * alpha)  # CIoU
             return iou - rho2 / c2  # DIoU
         c_area = cw * ch + eps  # convex area
-        return (
-            iou - (c_area - union) / c_area
-        )  # GIoU https://arxiv.org/pdf/1902.09630.pdf
-    return iou  # IoU
+        iou -= (c_area - union) / c_area  # GIoU https://arxiv.org/pdf/1902.09630.pdf
+    return torch.nan_to_num(iou, nan=0)  # IoU
+
+
+def bbox_overlaps_ciou(bboxes1: torch.Tensor, bboxes2: torch.Tensor):
+    """
+    expecting bboxes as TLBR
+    https://github.com/Zzh-tju/DIoU-SSD-pytorch/blob/master/utils/box/box_utils.py#L47
+    """
+
+    # 1 - create array of shape (N, M) where N is number of bboxes1 and M is number of bboxes2
+    rows = bboxes1.shape[0]
+    cols = bboxes2.shape[0]
+    cious = torch.zeros((rows, cols))
+    if rows * cols == 0:
+        return cious
+    exchange = False
+    if bboxes1.shape[0] > bboxes2.shape[0]:
+        bboxes1, bboxes2 = bboxes2, bboxes1
+        cious = torch.zeros((cols, rows))
+        exchange = True
+
+    # 2 - calculate the area of each bbox
+    w1 = bboxes1[:, 2] - bboxes1[:, 0]
+    h1 = bboxes1[:, 3] - bboxes1[:, 1]
+    w2 = bboxes2[:, 2] - bboxes2[:, 0]
+    h2 = bboxes2[:, 3] - bboxes2[:, 1]
+
+    area1 = w1 * h1
+    area2 = w2 * h2
+
+    # 3 - calculate the center of each bbox
+    center_x1 = (bboxes1[:, 2] + bboxes1[:, 0]) / 2
+    center_y1 = (bboxes1[:, 3] + bboxes1[:, 1]) / 2
+    center_x2 = (bboxes2[:, 2] + bboxes2[:, 0]) / 2
+    center_y2 = (bboxes2[:, 3] + bboxes2[:, 1]) / 2
+
+    # 4 - calculate the inner and outer boxes
+    inter_max_xy = torch.min(bboxes1[:, 2:], bboxes2[:, 2:])
+    inter_min_xy = torch.max(bboxes1[:, :2], bboxes2[:, :2])
+    out_max_xy = torch.max(bboxes1[:, 2:], bboxes2[:, 2:])
+    out_min_xy = torch.min(bboxes1[:, :2], bboxes2[:, :2])
+
+    # 5 - calculate the intersection area
+    inter = torch.clamp((inter_max_xy - inter_min_xy), min=0)
+    inter_area = inter[:, 0] * inter[:, 1]
+    inter_diag = (center_x2 - center_x1) ** 2 + (center_y2 - center_y1) ** 2
+    outer = torch.clamp((out_max_xy - out_min_xy), min=0)
+    outer_diag = (outer[:, 0] ** 2) + (outer[:, 1] ** 2)
+    union = area1 + area2 - inter_area
+    u = (inter_diag) / outer_diag
+    iou = inter_area / union
+    v = (4 / (math.pi**2)) * torch.pow((torch.atan(w2 / h2) - torch.atan(w1 / h1)), 2)
+    with torch.no_grad():
+        S = 1 - iou
+        alpha = v / (S + v)
+    cious = iou - (u + alpha * v)
+    cious = torch.clamp(cious, min=-1.0, max=1.0)
+    if exchange:
+        cious = cious.T
+    return cious
 
 
 def calculate_iou_batch(
