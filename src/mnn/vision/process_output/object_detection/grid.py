@@ -44,7 +44,7 @@ def calculate_coordinate_in_grid(
     yc_norm: float,
     field_shape: mnn.vision.image_size.ImageSize,
     grid_S: mnn.vision.image_size.ImageSize,
-) -> float:
+) -> Tuple[float, float]:
     grid_Sx_norm = grid_S.width / field_shape.width
     grid_Sy_norm = grid_S.height / field_shape.height
     n_x_grids, n_y_grids = _calculate_lower_bound(

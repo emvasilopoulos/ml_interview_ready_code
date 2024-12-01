@@ -1,10 +1,46 @@
+import abc
 import collections
 import random
 from typing import List
+
 import numpy as np
 import torch
 
 import mnn.logging
+
+
+class BaseLRScheduler:
+
+    def __init__(self, optimizer: torch.optim.Optimizer):
+        self.set_optimizer(optimizer)
+
+    def set_optimizer(self, optimizer: torch.optim.Optimizer):
+        self.optimizer = optimizer
+
+    @abc.abstractmethod
+    def update_loss(self, loss: torch.nn.Module):
+        pass
+
+
+class StepLRScheduler(BaseLRScheduler):
+
+    def __init__(self, optimizer: torch.optim.Optimizer, update_step_size: int):
+        super().__init__(optimizer)
+        self.__step_size = update_step_size
+        self.__current_step = 0
+        self.logger = mnn.logging.get_logger("StepLRScheduler")
+
+    def update_loss(self, loss: torch.nn.Module):
+        self.__current_step += 1
+        if self.__current_step % self.__step_size == 0:
+            perc = random.uniform(0.85, 0.95)
+            for i, param_group in enumerate(self.optimizer.param_groups):
+                if param_group["lr"] > 0.000001:
+                    temp = param_group["lr"]
+                    param_group["lr"] *= perc
+                    self.logger.info(
+                        f"Updating 'lr' for param_group-{i} from '{temp:.6f}' to {param_group['lr']:.6f} "
+                    )
 
 
 class MyLRScheduler:
@@ -29,7 +65,7 @@ class MyLRScheduler:
         m, b = np.polyfit(x, y, 1)
         return m, b
 
-    def add_batch_loss(self, loss: torch.nn.Module):
+    def update_loss(self, loss: torch.nn.Module):
         self.losses.append(loss.item())
         current_mean = torch.Tensor(self.losses).mean()
         self.loss_moving_average.append(current_mean)

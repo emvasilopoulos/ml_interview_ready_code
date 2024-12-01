@@ -64,7 +64,7 @@ def train_one_epoch(
         loss = loss_fn(output, target0)
         loss.backward()
         if scheduler is not None:
-            scheduler.add_batch_loss(loss)
+            scheduler.update_loss(loss)
         # Adjust learning weights
         optimizer.step()
 

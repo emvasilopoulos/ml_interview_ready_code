@@ -4,18 +4,17 @@ from typing import Dict, List, Optional, Tuple
 
 import torch
 import torch.utils.tensorboard
+import torchvision.ops
 
 import mnn.logging
 from mnn.losses import FocalLoss
-from mnn.lr_scheduler import MyLRScheduler
+import mnn.lr_scheduler
 from mnn.training_tools.parameters import get_params_grouped
 from mnn.vision.config import load_hyperparameters_config
-import mnn.vision.dataset.coco.experiments.detection_ordinal2 as mnn_ordinal
-from mnn.vision.dataset.coco.training.metrics import bbox_overlaps_ciou
+import mnn.vision.dataset.coco.experiments.ordinal.detection_ordinal as mnn_ordinal
 from mnn.vision.dataset.coco.training.train import train_val
 import mnn.vision.image_size
 import mnn.vision.models.cnn.object_detection as mnn_vit_model
-import mnn.vision.process_output.object_detection.bbox_mapper as mnn_bbox_mapper
 
 LOGGER = mnn.logging.get_logger(__name__)
 
@@ -39,30 +38,24 @@ def load_datasets(
 
 def load_model(
     config_path: pathlib.Path, existing_model_path: Optional[pathlib.Path] = None
-) -> mnn_vit_model.Vanilla576:
-    model = mnn_vit_model.Vanilla576()
+) -> mnn_vit_model.Vanilla:
+    image_size = mnn.vision.image_size.ImageSize(676, 676)
+    model = mnn_vit_model.Vanilla(image_size)
     if existing_model_path:
         model.load_state_dict(torch.load(existing_model_path))
+    else:
+        # Initialize weights using Kaiming Initialization
+        def kaiming_init_weights(m):
+            if isinstance(m, torch.nn.Linear):  # Check if the layer is a Linear layer
+                torch.nn.init.kaiming_normal_(
+                    m.weight, nonlinearity="leaky_relu"
+                )  # For ReLU activation
+                if m.bias is not None:
+                    torch.nn.init.zeros_(m.bias)  # Initialize biases to zero
+
+        # Apply Kaiming Initialization
+        model.apply(kaiming_init_weights)
     return model
-
-
-focal_loss = FocalLoss()
-
-import torchmetrics.detection
-
-
-class BboxLoss(torch.nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.ciou_fn = torchmetrics.detection.CompleteIntersectionOverUnion()
-
-    def forward(
-        self,
-        predictions: List[Dict[str, torch.Tensor]],
-        targets: List[Dict[str, torch.Tensor]],
-    ):
-        result = self.ciou_fn(predictions, targets)
-        return 1 - result["ciou"]
 
 
 class ExperimentalLoss(torch.nn.Module):
@@ -71,33 +64,51 @@ class ExperimentalLoss(torch.nn.Module):
     def __init__(self, dataset: mnn_ordinal.COCOInstances2017Ordinal):
         self.dataset = dataset
         super().__init__()
-        self.xc_loss = FocalLoss(gamma=2.0)
-        self.yc_loss = FocalLoss(gamma=2.0)
-        self.w_loss = FocalLoss(gamma=2.0)
-        self.h_loss = FocalLoss(gamma=2.0)
-        self.class_loss = FocalLoss(gamma=2.0)
-        self.bbox_loss = BboxLoss()
-        self.losses = {"xc": 0, "yc": 0, "w": 0, "h": 0, "class": 0, "bbox": 0}
+        self.xc_loss = torch.nn.BCELoss()
+        self.yc_loss = torch.nn.BCELoss()
+        self.w_loss = torch.nn.BCELoss()
+        self.h_loss = torch.nn.BCELoss()
+        self.objectness_loss = torch.nn.BCELoss()
+        self.class_loss = torch.nn.BCELoss()
+        self._reset_losses()
         self.total_loss = 0
 
-    def _total_loss(self):
-        return sum(self.losses.values())
-
-    def forward(self, predictions: torch.Tensor, targets: torch.Tensor):
+    def _reset_losses(self):
         self.losses = {
             "xc": 0,
             "yc": 0,
             "w": 0,
             "h": 0,
+            "objectness": 0,
             "class": 0,
-            "bbox": 0,
         }
+
+    def _total_loss(self):
+        return sum(self.losses.values())
+
+    def _add_sample_losses(
+        self,
+        name: str,
+        loss: torch.Tensor,
+        condition: torch.Tensor,
+        pred: torch.Tensor,
+        target: torch.Tensor,
+    ):
+        loss_value = loss(
+            pred[condition].unsqueeze(0),
+            target[condition].unsqueeze(0),
+        )
+        self.losses[name] += loss_value
+
+    def forward(self, predictions: torch.Tensor, targets: torch.Tensor):
+        self._reset_losses()
         for pred_sample, target_sample in zip(predictions, targets):
             (
                 pred_xc_ordinals,
                 pred_yc_ordinals,
                 pred_w_ordinals,
                 pred_h_ordinals,
+                pred_objectness_scores,
                 pred_class_scores,
             ) = self.dataset.split_output_to_vectors(pred_sample)
 
@@ -106,76 +117,101 @@ class ExperimentalLoss(torch.nn.Module):
                 target_yc_ordinals,
                 target_w_ordinals,
                 target_h_ordinals,
+                target_objectness_scores,
                 target_class_scores,
             ) = self.dataset.split_output_to_vectors(target_sample)
-
-            # xc
-            self.xc_loss_value = self.xc_loss(
+            positive_condition = target_objectness_scores > 0
+            if positive_condition.sum() > 0:
+                # condition = target_objectness_scores > 0 # could match with ordinal objectness
+                condition = target_objectness_scores == 1
+            else:
+                condition = target_objectness_scores == 0
+            self._add_sample_losses(
+                "xc",
+                self.xc_loss,
+                condition,
                 pred_xc_ordinals,
                 target_xc_ordinals,
             )
-            self.losses["xc"] += self.xc_loss_value
-
-            # yc
-            self.yc_loss_value = self.yc_loss(
+            self._add_sample_losses(
+                "yc",
+                self.yc_loss,
+                condition,
                 pred_yc_ordinals,
                 target_yc_ordinals,
             )
-            self.losses["yc"] += self.yc_loss_value
-
-            # w
-            self.w_loss_value = self.w_loss(pred_w_ordinals, target_w_ordinals)
-            self.losses["w"] += self.w_loss_value
-
-            # h
-            self.h_loss_value = self.h_loss(pred_h_ordinals, target_h_ordinals)
-            self.losses["h"] += self.h_loss_value
-
-            # class
-            self.class_loss_value = self.class_loss(
+            self._add_sample_losses(
+                "w",
+                self.w_loss,
+                condition,
+                pred_w_ordinals,
+                target_w_ordinals,
+            )
+            self._add_sample_losses(
+                "h",
+                self.h_loss,
+                condition,
+                pred_h_ordinals,
+                target_h_ordinals,
+            )
+            self._add_sample_losses(
+                "class",
+                self.class_loss,
+                condition,
                 pred_class_scores,
                 target_class_scores,
             )
-            self.losses["class"] += self.class_loss_value
-
-            # bbox
-            # TODO --> faster
-            bboxes_gt, categories_gt, conf_gt = (
-                self.dataset.decode_output_tensor_filtered(
-                    target_sample, score_threshold=0.5
-                )
+            objectness_loss_value = self.objectness_loss(
+                pred_objectness_scores,
+                target_objectness_scores,
             )
-            # TODO --> faster
-            (
-                bboxes_pred,
-                categories_pred,
-                conf_pred,
-            ) = self.dataset.decode_output_tensor_filtered(
-                target_sample, score_threshold=0.5
-            )
-            if bboxes_gt.shape[0] == 0:
-                self.bbox_loss_value = 0
-            else:
-                bboxes_gt = mnn_bbox_mapper.tl_xywh_to_tlbr_tensor(bboxes_gt)
-                bboxes_pred = mnn_bbox_mapper.tl_xywh_to_tlbr_tensor(bboxes_pred)
-                gts = [{"boxes": bboxes_gt, "labels": categories_gt}]
-                preds = [
-                    {
-                        "boxes": bboxes_pred,
-                        "labels": categories_pred,
-                        "scores": conf_pred,
-                    }
-                ]
-                self.bbox_loss_value = self.bbox_loss(preds, gts)
-            self.losses["bbox"] += self.bbox_loss_value
 
+            self.losses["objectness"] += objectness_loss_value
+
+            # # # bbox
+            # bboxes_gt, _, _, _ = self.dataset.decode_output_tensor(
+            #     target_sample, filter_by_objectness_score=True
+            # )
+            # bboxes_pred, _, objectnesses_pred, _ = (
+            #     self.dataset.decode_output_tensor_with_priors(
+            #         pred_sample, filter_by_objectness_score=True
+            #     )
+            # )
+
+            # # Average objectnesses because why not
+            # objectnesses /= self.dataset.n_priors
+            # bbox_loss_value = self.bbox_loss(bboxes_pred, objectnesses_pred, bboxes_gt)
+            # self.losses["bbox"] += bbox_loss_value
+        batch_size = targets.shape[0]
+        self._average_losses(batch_size=batch_size)
         self.total_loss = self._total_loss()
         return self.total_loss
 
+    def _average_losses(self, batch_size: int):
+        for k in self.losses.keys():
+            self.losses[k] /= batch_size
+
     def latest_loss_to_tqdm(self) -> str:
-        return f"Total: {self.total_loss:.5f} | " + " | ".join(
-            [f"{k}: {v:.5f}" for k, v in self.losses.items()]
+        return f"Total: {self.total_loss:.3f} | " + " | ".join(
+            [f"{k}: {v:.3f}" for k, v in self.losses.items()]
         )
+
+
+class ExperimentalLoss2(torch.nn.Module):
+
+    def __init__(self, dataset: mnn_ordinal.COCOInstances2017Ordinal):
+        super().__init__()
+        self.loss = torch.nn.BCELoss()
+        self.current_loss = 0
+        self.dataset = dataset
+
+    def forward(self, predictions: torch.Tensor, targets: torch.Tensor):
+        self.current_loss = self.loss(predictions, targets)
+
+        return self.current_loss
+
+    def latest_loss_to_tqdm(self) -> str:
+        return f"BCE-loss: {self.current_loss:.5f}"
 
 
 if __name__ == "__main__":
@@ -235,7 +271,13 @@ if __name__ == "__main__":
     optimizer.add_param_group({"params": parameters_grouped[0], "weight_decay": decay})
     optimizer.add_param_group({"params": parameters_grouped[1], "weight_decay": 0.0})
 
-    scheduler = MyLRScheduler(optimizer)
+    percentage = 0.1
+    update_step_size = (
+        percentage * len(train_dataset) // hyperparameters_config.batch_size
+    )
+    scheduler = mnn.lr_scheduler.StepLRScheduler(
+        optimizer, update_step_size=update_step_size
+    )
 
     # Tensorboard
     writer = torch.utils.tensorboard.SummaryWriter(
@@ -249,7 +291,7 @@ if __name__ == "__main__":
         train_dataset=train_dataset,
         val_dataset=val_dataset,
         object_detection_model=model,
-        loss_fn=ExperimentalLoss(val_dataset),
+        loss_fn=ExperimentalLoss(dataset=train_dataset),
         optimizer=optimizer,
         scheduler=scheduler,
         hyperparameters_config=hyperparameters_config,

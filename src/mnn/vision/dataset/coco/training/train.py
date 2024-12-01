@@ -7,44 +7,14 @@ import torch.utils.tensorboard
 
 
 from mnn.vision.dataset.coco.base import BaseCOCODatasetGrouped
-from mnn.vision.dataset.coco.experiments.detection_fading_bboxes_in_mask import (
-    COCOInstances2017FBM,
-)
 from mnn.vision.dataset.coco.training.transform import BaseIOTransform
 import mnn.vision.config as mnn_config
-import mnn.vision.dataset.coco.training.utils as mnn_coco_training_utils
 import mnn.torch_utils as mnn_utils
 from mnn.vision.dataset.coco.training.session import train_one_epoch, val_once
 from mnn.vision.image_size import ImageSize
 import mnn.logging
 
 LOGGER = mnn.logging.get_logger(__name__)
-
-
-def default_scheduler(
-    optimizer: torch.optim.Optimizer, epochs: int
-) -> torch.optim.lr_scheduler.LambdaLR:
-    # Copied from ultralytics
-    lrf = 0.01
-    lf = lambda x: max(1 - x / epochs, 0) * (1.0 - lrf) + lrf  # linear
-    return torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lf)
-
-
-def default_train_val_datasets(
-    dataset_dir: pathlib.Path, expected_image_size: ImageSize
-) -> Tuple[COCOInstances2017FBM, COCOInstances2017FBM]:
-    # See coco["categories"]
-    classes = None
-    train_dataset = COCOInstances2017FBM(
-        dataset_dir,
-        "train",
-        expected_image_size,
-        classes=classes,
-    )
-    val_dataset = COCOInstances2017FBM(
-        dataset_dir, "val", expected_image_size, classes=classes
-    )
-    return train_dataset, val_dataset
 
 
 def train_val(

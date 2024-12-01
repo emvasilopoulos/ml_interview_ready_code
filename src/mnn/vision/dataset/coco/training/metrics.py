@@ -74,7 +74,7 @@ def bbox_iou(
     return torch.nan_to_num(iou, nan=0)  # IoU
 
 
-def bbox_overlaps_ciou(bboxes1: torch.Tensor, bboxes2: torch.Tensor):
+def bbox_overlaps_ciou(bboxes1: torch.Tensor, bboxes2: torch.Tensor) -> torch.Tensor:
     """
     expecting bboxes as TLBR
     https://github.com/Zzh-tju/DIoU-SSD-pytorch/blob/master/utils/box/box_utils.py#L47
