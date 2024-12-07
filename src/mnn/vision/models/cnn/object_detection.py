@@ -273,6 +273,196 @@ class Vanilla(torch.nn.Module):
         return x
 
 
+class VanillaSplit(torch.nn.Module):
+    epoch = -1
+
+    def state_dict(self, *args, **kwargs):
+        # Get the regular state_dict
+        state = super().state_dict(*args, **kwargs)
+        # Add the custom attribute
+        state["epoch"] = self.epoch
+        return state
+
+    def load_state_dict(self, state_dict, *args, **kwargs):
+        # Load the custom attribute
+        self.epoch = state_dict.pop("epoch", -1) + 1  # Default to 0 if not found
+        # Load the rest of the state_dict as usual
+        super().load_state_dict(state_dict, *args, **kwargs)
+
+    def __init__(self, image_size: mnn.vision.image_size.ImageSize):
+        super().__init__()
+        self.expected_image_size = image_size  # alias -> imsz
+        layer_output_shape = mnn.vision.image_size.ImageSize(
+            image_size.width, image_size.height
+        )
+        self.image_channels = self.expected_image_size.channels
+
+        cnn_activation = torch.nn.LeakyReLU
+        """ Down Sampling """
+        # 1 - scale down
+        self.same1 = mnn_conv_blocks_down.ConvBn(
+            self.image_channels,
+            out_channels=16,
+            kernel=3,
+            stride=1,
+            padding=1,
+            activation=cnn_activation(),
+        )
+        self.same2 = mnn_conv_blocks_down.ConvBn(
+            self.same1.out_channels,
+            out_channels=32,
+            kernel=3,
+            stride=1,
+            padding=1,
+            activation=cnn_activation(),
+        )
+        self.same3 = mnn_conv_blocks_down.ConvBn(
+            self.same2.out_channels,
+            out_channels=64,
+            kernel=3,
+            stride=1,
+            padding=1,
+            activation=cnn_activation(),
+        )
+        scale_down_factor = 2
+        self.down1 = mnn_conv_blocks_down.ConvBn(
+            self.same3.out_channels,
+            out_channels=128,
+            kernel=3,
+            stride=scale_down_factor,
+            padding=1,
+            activation=cnn_activation(),
+        )  # cuts resolution in half --> imsz.width//2 x imsz.height//2
+        layer_output_shape.width //= scale_down_factor
+        layer_output_shape.height //= scale_down_factor
+
+        # 2 - scale down
+        scale_down_factor = 2
+        self.down2 = mnn_conv_blocks_down.ConvBn(
+            self.down1.out_channels,
+            256,
+            kernel=3,
+            stride=scale_down_factor,
+            padding=1,
+            activation=cnn_activation(),
+        )  # cuts in half --> imsz.width//4 x imsz.height//4
+        layer_output_shape.width //= scale_down_factor
+        layer_output_shape.height //= scale_down_factor
+
+        # bottleneck
+        self.down_bootleneck2 = mnn_conv_blocks_down.Bottleneck(
+            self.down2.out_channels,
+            activation=cnn_activation(),
+        )
+
+        # 3 - scale down
+        scale_down_factor = 2
+        self.down3 = mnn_conv_blocks_down.ConvBn(
+            self.down_bootleneck2.out_channels,
+            512,
+            kernel=3,
+            stride=scale_down_factor,
+            padding=1,
+            activation=cnn_activation(),
+        )  # cuts in half --> imsz.width//8 x imsz.height//8
+        layer_output_shape.width //= scale_down_factor
+        layer_output_shape.height //= scale_down_factor
+        self.down_bootleneck3 = mnn_conv_blocks_down.Bottleneck(
+            self.down3.out_channels,
+            activation=cnn_activation(),
+        )
+
+        """ SPP """
+        self.spp = mnn_conv_blocks_down.SPP(
+            self.down_bootleneck3.out_channels,
+            out_channels=1024,
+            activation=cnn_activation(),
+        )
+
+        scale_down_factor = 3
+        self.pre_head0 = mnn_conv_blocks_down.ConvBn(
+            self.spp.out_channels,
+            out_channels=1024,
+            kernel=3,
+            stride=scale_down_factor,
+            padding=0,
+            activation=cnn_activation(),
+        )  # scale down to (imsz.width//8)/scale_down_factor x (imsz.height//8)/scale_down_factor
+
+        layer_output_shape.width //= scale_down_factor
+        layer_output_shape.height //= scale_down_factor
+        self.pre_head1 = mnn_conv_blocks_down.Bottleneck(
+            self.pre_head0.out_channels,
+            activation=cnn_activation(),
+        )
+        self.pre_head2 = mnn_conv_blocks_down.ConvBn(
+            self.pre_head1.out_channels,
+            out_channels=layer_output_shape.width // 2 * layer_output_shape.height // 2,
+            kernel=3,
+            stride=1,
+            padding=1,
+            activation=cnn_activation(),
+        )
+        self.max_pool = torch.nn.MaxPool2d(kernel_size=2, stride=2)
+        layer_output_shape.width //= 2
+        layer_output_shape.height //= 2
+
+        self.head0 = torch.nn.Linear(self.pre_head2.out_channels, 512, bias=True)
+        self.head0_activation = torch.nn.LeakyReLU()
+
+        self.head1 = torch.nn.Linear(512, 768, bias=True)
+        self.head1_activation = torch.nn.LeakyReLU()
+
+        self.output_shape = mnn.vision.image_size.ImageSize(
+            layer_output_shape.width * layer_output_shape.height,
+            layer_output_shape.width * layer_output_shape.height,
+        )
+        vector_size = self.output_shape.width
+        class_size = 79
+        objectness_size = 1
+        bbox_size = vector_size - class_size - objectness_size
+        xc_size = bbox_size // 4
+        yc_size = bbox_size // 4
+        w_size = bbox_size // 4
+        h_size = bbox_size // 4
+        self.head_xc = torch.nn.Linear(768, xc_size, bias=True)
+        self.head_yc = torch.nn.Linear(768, yc_size, bias=True)
+        self.head_w = torch.nn.Linear(768, w_size, bias=True)
+        self.head_h = torch.nn.Linear(768, h_size, bias=True)
+        self.head_class = torch.nn.Linear(768, class_size, bias=True)
+        self.head_objectness = torch.nn.Linear(768, objectness_size, bias=True)
+        self.head_activation = torch.nn.Sigmoid()
+        ## TODO - for more modularity use class VectorIndices
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.same1(x)
+        x = self.same2(x)
+        x = self.same3(x)
+        x = self.down1(x)
+        x = self.down2(x)
+        x = self.down_bootleneck2(x)
+        x = self.down3(x)
+        x = self.down_bootleneck3(x)
+        x = self.spp(x)
+        x = self.pre_head0(x)
+        x = self.pre_head1(x)
+        x = self.pre_head2(x)
+        x = self.max_pool(x)
+        x = x.view(x.shape[0], x.shape[1], -1)
+        x = self.head0(x)
+        x = self.head0_activation(x)
+        x = self.head1(x)
+        x = self.head1_activation(x)
+        xc = self.head_activation(self.head_xc(x))
+        yc = self.head_activation(self.head_yc(x))
+        w = self.head_activation(self.head_w(x))
+        h = self.head_activation(self.head_h(x))
+        class_ = self.head_activation(self.head_class(x))
+        objectness = self.head_activation(self.head_objectness(x))
+        y = torch.cat([xc, yc, w, h, class_, objectness], dim=2)
+        return y
+
+
 class Vanilla576Priors(torch.nn.Module):
 
     def __init__(self):
@@ -423,11 +613,10 @@ if __name__ == "__main__":
     import time
 
     image_size = mnn.vision.image_size.ImageSize(676, 676)
-    model = Vanilla(image_size)
-    model.to("cuda")
+    model = VanillaSplit(image_size)
     for _ in range(3):
         t0 = time.time()
-        x = torch.rand((2, 3, image_size.height, image_size.width), device="cuda")
+        x = torch.rand((2, 3, image_size.height, image_size.width))
         y = model(x)
         t1 = time.time()
         print(

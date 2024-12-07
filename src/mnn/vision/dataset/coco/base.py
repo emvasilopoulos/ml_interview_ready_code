@@ -116,7 +116,7 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
             img_tensor = img_tensor.repeat(3, 1, 1)
         return self.input_pipeline(img_tensor)
 
-    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
+    def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         img_tensor, annotations = self.get_pair(idx)
 
         # Calculate new dimensions & resize only
@@ -133,7 +133,7 @@ class BaseCOCODatasetGrouped(torch.utils.data.Dataset):
         )
 
         # Random padding that both input & output must know about
-        padding_percent = 0
+        padding_percent = random.random()
         pad_value = random.random()
 
         # Prepare output based on expected image size & padding that will be applied in image

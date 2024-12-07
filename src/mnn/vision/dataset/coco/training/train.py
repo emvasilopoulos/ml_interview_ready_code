@@ -31,6 +31,7 @@ def train_val(
     io_transform: BaseIOTransform = None,
     log_rate: int = 50,
     save_dir: pathlib.Path = pathlib.Path("trained_models"),
+    start_epoch: int = 0,
 ):
     # Print model parameters
     LOGGER.info(
@@ -66,7 +67,7 @@ def train_val(
         save_dir / f"{experiment}_object_detection_in_epoch.pth"
     )
 
-    for epoch in range(hyperparameters_config.epochs):
+    for epoch in range(start_epoch, hyperparameters_config.epochs):
         LOGGER.info(f"---------- EPOCH-{epoch} ------------")
         # LOGGER.info(f"Scheduler State:\n{scheduler.state_dict()}")
         train_one_epoch(

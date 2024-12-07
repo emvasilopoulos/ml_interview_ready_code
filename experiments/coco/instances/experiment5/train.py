@@ -1,10 +1,9 @@
 import argparse
 import pathlib
-from typing import Dict, List, Optional, Tuple
+from typing import Optional, Tuple
 
 import torch
 import torch.utils.tensorboard
-import torchvision.ops
 
 import mnn.logging
 from mnn.losses import FocalLoss
@@ -24,25 +23,25 @@ def load_datasets(
     expected_image_size: mnn.vision.image_size.ImageSize,
     output_shape: mnn.vision.image_size.ImageSize,
 ) -> Tuple[
-    mnn_ordinal.COCOInstances2017Ordinal,
-    mnn_ordinal.COCOInstances2017Ordinal,
+    mnn_ordinal.COCOInstances2017OrdinalBalanced,
+    mnn_ordinal.COCOInstances2017OrdinalBalanced,
 ]:
-    train_dataset = mnn_ordinal.COCOInstances2017Ordinal(
+    train_dataset = mnn_ordinal.COCOInstances2017OrdinalBalanced(
         dataset_dir, "train", expected_image_size, output_shape
     )
-    val_dataset = mnn_ordinal.COCOInstances2017Ordinal(
+    val_dataset = mnn_ordinal.COCOInstances2017OrdinalBalanced(
         dataset_dir, "val", expected_image_size, output_shape
     )
     return train_dataset, val_dataset
 
 
 def load_model(
-    config_path: pathlib.Path, existing_model_path: Optional[pathlib.Path] = None
-) -> mnn_vit_model.Vanilla:
+    existing_model_path: Optional[pathlib.Path] = None,
+) -> mnn_vit_model.VanillaSplit:
     image_size = mnn.vision.image_size.ImageSize(676, 676)
-    model = mnn_vit_model.Vanilla(image_size)
-    if existing_model_path:
-        model.load_state_dict(torch.load(existing_model_path))
+    model = mnn_vit_model.VanillaSplit(image_size)
+    if existing_model_path.exists():
+        model.load_state_dict(torch.load(existing_model_path.as_posix()))
     else:
         # Initialize weights using Kaiming Initialization
         def kaiming_init_weights(m):
@@ -228,18 +227,16 @@ if __name__ == "__main__":
         required=False,
         default="/home/emvasilopoulos/projects/ml_interview_ready_code/experiments/coco/instances/experiment1/hyperparameters.yaml",
     )
-    parser.add_argument("--existing-model-path", type=str, required=False, default=None)
+    parser.add_argument("--existing_model", type=str, required=False, default=None)
     args = parser.parse_args()
 
     LOGGER.info("------ LOADING ------")
     # MODEL
-    if args.existing_model_path is not None:
-        existing_model_path = pathlib.Path(args.existing_model_path)
-        LOGGER.info(f"Existing model: {args.existing_model_path}")
-    else:
-        existing_model_path = None
-    model = load_model(existing_model_path)
-    initial_epoch = model.state_dict().get("epoch", 0)
+    if args.existing_model is not None:
+        existing_model_path = pathlib.Path(args.existing_model)
+        LOGGER.info(f"Existing model: {existing_model_path}")
+    model = load_model(existing_model_path=existing_model_path)
+    initial_epoch = model.epoch
     LOGGER.info(f"Initial epoch: {initial_epoch}")
     if torch.cuda.is_available():
         device = torch.device("cuda:0")
@@ -271,7 +268,7 @@ if __name__ == "__main__":
     optimizer.add_param_group({"params": parameters_grouped[0], "weight_decay": decay})
     optimizer.add_param_group({"params": parameters_grouped[1], "weight_decay": 0.0})
 
-    percentage = 0.1
+    percentage = 0.25
     update_step_size = (
         percentage * len(train_dataset) // hyperparameters_config.batch_size
     )
@@ -298,4 +295,5 @@ if __name__ == "__main__":
         writer=writer,
         experiment="experiment5",
         validation_image_path=validation_image_path,
+        start_epoch=initial_epoch,
     )

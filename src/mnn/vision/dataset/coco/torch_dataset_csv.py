@@ -128,7 +128,9 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
         cropped_len = len(self.df_cropped_groups_by_image_id)
         return original_len + cropped_len
 
-    def _prepare_annotations(self, x1_norms, y1_norms, w_norms, h_norms, categories):
+    def _prepare_annotations(
+        self, x1_norms, y1_norms, w_norms, h_norms, categories
+    ) -> List[Dict[str, Any]]:
         return [
             {"normalized_bbox": [x1, y1, w, h], "category_id": category}
             for x1, y1, w, h, category in zip(
@@ -136,7 +138,7 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
             )
         ]
 
-    def _get_pair_original(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
+    def _get_pair_original(self, idx: int) -> Tuple[torch.Tensor, List[Dict[str, Any]]]:
         group = self.original_groups_indexed[idx]
         data_for_image = self.df_original_groups_by_image_id.get_group(group)
         image_id = data_for_image["image_id"].values[0]
@@ -150,7 +152,7 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
         annotations = self._prepare_annotations(x1s, y1s, ws, hs, categories)
         return img_tensor, annotations
 
-    def _get_pair_cropped(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
+    def _get_pair_cropped(self, idx: int) -> Tuple[torch.Tensor, List[Dict[str, Any]]]:
         group = self.cropped_groups_indexed[idx]
         data_for_image = self.df_cropped_groups_by_image_id.get_group(group)
         image_id = data_for_image["image_id"].values[0]
@@ -196,13 +198,18 @@ class BaseCOCODatasetGroupedCsv(BaseCOCODatasetGrouped):
         )
         return img_tensor, annotations
 
-    def get_pair(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
+    def _get_pair(self, idx: int) -> Tuple[torch.Tensor, List[Dict[str, Any]]]:
         if idx < len(self.df_original_groups_by_image_id):
             img_tensor, annotations = self._get_pair_original(idx)
         else:
             img_tensor, annotations = self._get_pair_cropped(
                 idx - len(self.df_original_groups_by_image_id)
             )
+        return img_tensor, annotations
+
+    def get_pair(self, idx: int) -> Tuple[torch.Tensor, Dict[str, Any]]:
+        img_tensor, annotations = self._get_pair(idx)
+
         if len(annotations) == 0:
             dtype = img_tensor.dtype
             shape = img_tensor.shape

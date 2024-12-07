@@ -29,6 +29,9 @@ class StepLRScheduler(BaseLRScheduler):
         self.__step_size = update_step_size
         self.__current_step = 0
         self.logger = mnn.logging.get_logger("StepLRScheduler")
+        self.param_groups_initial_lrs = [
+            param_group["lr"] for param_group in self.optimizer.param_groups
+        ]
 
     def update_loss(self, loss: torch.nn.Module):
         self.__current_step += 1
@@ -40,6 +43,11 @@ class StepLRScheduler(BaseLRScheduler):
                     param_group["lr"] *= perc
                     self.logger.info(
                         f"Updating 'lr' for param_group-{i} from '{temp:.6f}' to {param_group['lr']:.6f} "
+                    )
+                else:
+                    param_group["lr"] = self.param_groups_initial_lrs[i] / 10
+                    self.logger.info(
+                        f"Resetting 'lr' for param_group-{i} to {param_group['lr']:.6f} "
                     )
 
 

@@ -5,7 +5,7 @@ import logging
 
 import torch
 
-import mnn.vision.dataset.coco.experiments.detection_ordinal2 as mnn_detection_ordinal
+import mnn.vision.dataset.coco.experiments.failures.detection_ordinal2 as mnn_detection_ordinal
 import mnn.vision.process_input.dimensions.resize_fixed_ratio as mnn_resize_fixed_ratio
 import mnn.vision.process_output.object_detection.bbox_mapper as mnn_bbox_mapper
 import mnn.vision.process_output.object_detection.grid as mnn_grid

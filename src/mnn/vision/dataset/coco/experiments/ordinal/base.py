@@ -130,8 +130,8 @@ class BaseCOCOInstances2017Ordinal(COCODatasetInstances2017):
         idx = category
         category_vector = torch.zeros(self.N_CLASSES)
         category_vector[idx] = 1
-        category_vector = self._expand_left(category_vector, idx)
-        category_vector = self._expand_right(category_vector, idx)
+        # category_vector = self._expand_left(category_vector, idx)
+        # category_vector = self._expand_right(category_vector, idx)
         vector[self.vector_indices.classes_start_idx :] = category_vector
         return vector
 
